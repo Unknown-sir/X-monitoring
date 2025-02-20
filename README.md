@@ -43,8 +43,9 @@ nohup python3 app.py > app.log 2>&1 &
 ```
 7.Access the Project
 Open a browser and go to:
-<h1>http://your_server_ip:5000</h1>
+<b>http://your_server_ip:5000</b>
 Login with default credentials:
-Username: admin
-Password: admin123
+
+Username: <b>admin</b>
+Password: <b>admin123</b>
 
