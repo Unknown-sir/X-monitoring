@@ -1,3 +1,10 @@
+# Server Monitoring Tool
+<div align="center"><img src="https://uploadkon.ir/uploads/d62516_25Screenshot-2025-02-16-225447.png" width="500"></div>
+<div align="center"><br>
+
+برای توضیحات <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/README-fa.md"> فارسی اینجا بزنید </a>
+</div>
+
 Installation Guide in English
 Installation Guide for X-monitoring Project with nohup
 This guide will help you install and run the X-monitoring project on a Linux server using nohup. The project is assumed to be uploaded as a ZIP file on GitHub.
