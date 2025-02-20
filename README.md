@@ -30,7 +30,8 @@ sudo apt install python3 python3-pip unzip -y
 ```
 3.Download Project from GitHub
 -Copy the ZIP file download link from GitHub (e.g., from Releases or "Download ZIP").
--Download the file (replace URL with the actual link):
+
+-Download the file:
 ```
 wget https://github.com/unknown-sir/X-monitoring/X-monitoring.zip -O /tmp/X-monitoring.zip
 ```
