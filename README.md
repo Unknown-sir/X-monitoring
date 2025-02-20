@@ -7,6 +7,7 @@ Root or sudo access
 Internet connection
 Tools: unzip, python3, pip
 Installation Steps
+
 1.Update System
 -Update the system:
 ```
