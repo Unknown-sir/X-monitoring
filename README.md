@@ -9,6 +9,7 @@ Tools: unzip, python3, pip
 Installation Steps
 
 1.Update System
+
 -Update the system:
 ```
 sudo apt update && sudo apt upgrade -y
