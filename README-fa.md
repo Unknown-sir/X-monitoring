@@ -58,3 +58,5 @@ nohup python3 app.py > app.log 2>&1 &
 نام کاربری: <b>admin</b>
 رمز عبور: <b>admin123</b>
 
+
+ توضیحات <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/agent-package.md"> نصب پکیج های سرورهای ایجنت </a>
