@@ -62,3 +62,4 @@ Login with default credentials:
 Username: <b>admin</b>
 Password: <b>admin123</b>
 
+ توضیحات <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/README-fa.md"> نصب پکیج های سرورهای ایجنت </a>
