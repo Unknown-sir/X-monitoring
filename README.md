@@ -62,4 +62,5 @@ Login with default credentials:
 Username: <b>admin</b>
 Password: <b>admin123</b>
 
- توضیحات <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/agent-package.md"> نصب پکیج های سرورهای ایجنت </a>
+
+<a href="https://github.com/Unknown-sir/X-monitoring/blob/main/agent-package.md"> Description of installing agent server packages </a>
