@@ -37,6 +37,11 @@ wget https://github.com/unknown-sir/X-monitoring/X-monitoring.zip -O /tmp/X-moni
 sudo unzip /tmp/X-monitoring.zip -d /opt/X-monitoring
 cd /opt/X-monitoring
 ```
+**با دستور زیر در کد
+توکن ربات تلگرام ، آیدی عددی ادمین در تلگرام ، اطلاعات smtp خود را وارد کنید**
+```
+nano app.py
+```
 5.نصب وابستگی‌ها
 -به دایرکتوری پروژه بروید و وابستگی‌ها را نصب کنید:
 ```
