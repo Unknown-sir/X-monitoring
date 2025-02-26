@@ -1,7 +1,7 @@
 # Server Monitoring Tool
-<div align="center"><img src="https://uploadkon.ir/uploads/dd5320_25Screenshot-15.jpg" width="300"></div>
-<div align="center"><img src="https://uploadkon.ir/uploads/fc8c20_25Screenshot-16.jpg" width="300"></div>
-<div align="center"><img src="https://uploadkon.ir/uploads/493020_25Screenshot-17.jpg" width="300"></div>
+<div align="center"><img src="https://uploadkon.ir/uploads/dacc26_25Screenshot-1.jpg" width="300"></div>
+<div align="center"><img src="https://uploadkon.ir/uploads/456f26_25Screenshot-2.jpg" width="300"></div>
+<div align="center"><img src="https://uploadkon.ir/uploads/fe9f26_25Screenshot-3.jpg" width="300"></div>
 <div align="center"><br>
 
 برای توضیحات <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/README-fa.md"> فارسی اینجا بزنید </a>
