@@ -41,6 +41,10 @@ wget https://github.com/unknown-sir/X-monitoring/X-monitoring.zip -O /tmp/X-moni
 sudo unzip /tmp/X-monitoring.zip -d /opt/X-monitoring
 cd /opt/X-monitoring
 ```
+**Enter your telegram bot token, telegram admin numeric ID, smtp information with the following command in the code**
+```
+nano app.py
+```
 5.Install Dependencies
 -Navigate to the project directory and install dependencies:
 ```
