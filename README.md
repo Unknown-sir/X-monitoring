@@ -1,3 +1,9 @@
+<div align="center"><img src="https://s34.picofile.com/file/8488298118/Screenshot_2.jpg" width="500"></div>
+<div align="center"><img src="https://s34.picofile.com/file/8488298126/Screenshot_1.jpg" width="500"></div>
+<div align="center"><br>
+
+  برای توضیحات <a href="https://github.com/MrAminiDev/NebulaTunnel/blob/main/README-fa.md"> فارسی اینجا بزنید </a
+
 # XMonitor
 
 XMonitor is a lightweight server traffic monitoring panel built with Flask,
