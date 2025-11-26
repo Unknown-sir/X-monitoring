@@ -84,8 +84,8 @@ docs/
 ### ۱. کلون کردن ریپو
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/xmonitor.git
-cd xmonitor
+git clone https://github.com/Unknown-sir/X-monitoring.git
+cd X-monitoring
 ```
 
 نام کاربری گیت‌هاب خودتان را جایگزین `YOUR_GITHUB_USERNAME` کنید.
@@ -153,14 +153,6 @@ cp config.example.json config.json
   - `MONITOR_INTERVAL` (فاصله‌ی بین هر بار خواندن ترافیک، بر حسب ثانیه)
   - `SSH_KEEPALIVE` (در صورت نیاز)
 
-- رمز اولیه Owner:
-  - `OWNER_PASSWORD`
-
-#### فایل `config.json`
-
-- `license_key` – مقدار لایسنس
-- `register_date` – تاریخ ثبت (مثلاً `"2025-01-01"`)
-- `is_trial` – `true` یا `false` برای مشخص کردن اینکه لایسنس آزمایشی است یا کامل
 
 ---
 
