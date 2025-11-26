@@ -1,5 +1,5 @@
-<div align="center"><img src="https://s34.picofile.com/file/8488298118/Screenshot_2.jpg" width="500"></div>
-<div align="center"><img src="https://s34.picofile.com/file/8488298126/Screenshot_1.jpg" width="500"></div>
+<div align="center"><img src="https://uploadkon.ir/uploads/cb0526_25login.jpg" width="500"></div>
+<div align="center"><img src="https://uploadkon.ir/uploads/74b426_25panel.jpg" width="500"></div>
 <div align="center"><br>
 <a href="https://github.com/Unknown-sir/X-monitoring/blob/main/README.fa.md">برای توضیحات فارسی اینجا کلیک کنید</a>
 
@@ -70,8 +70,8 @@ docs/
 ### 2. Clone & install
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USERNAME/xmonitor.git
-cd xmonitor
+git clone https://github.com/Unknown-sir/X-monitoring.git
+cd X-monitoring
 
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
@@ -97,7 +97,6 @@ Then open `.env` and set at least:
 - `BOT_TOKEN`, `BOT_ADMINS`, `BOT_OWNER_ID`
 - SMTP settings (`EMAIL_FROM`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`)
 
-Configure `config.json` with your license information.
 
 ---
 
