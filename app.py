@@ -43,8 +43,8 @@ def invalidate_servers_cache():
 # تنظیمات پیش‌فرض
 DEFAULT_ENV = {
     "SECRET_KEY": "mysecretkey123",
-    "TELEGRAM_TOKEN": "7922676385:AAGwL5xR93QpBUkK8l6uoDOjJSXIqlo2cuY",
-    "ADMIN_CHAT_ID": "5961740775",
+    "TELEGRAM_TOKEN": "YOUR_BOT_TOKEN",
+    "ADMIN_CHAT_ID": "YOUR_CHAT_ID",
     "EMAIL_FROM": "YOUR_E-MAIL",
     "EMAIL_PASSWORD": "Email_password",
     "SMTP_SERVER": "smtp.mailersend.net",
