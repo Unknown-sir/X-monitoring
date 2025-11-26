@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}ثبت لایسنس | XMonitor{% endblock %}
+{% block content %}
+<div class="license-page">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+                <i class="fas fa-key text-primary"></i>
+                ثبت لایسنس
+            </h2>
+            <p class="text-muted mb-0 small">
+                کلید لایسنس دریافتی را وارد کنید تا پنل فعال شود.
+            </p>
+        </div>
+        <div class="small text-muted">
+            فقط مدیر اصلی پنل باید این بخش را تکمیل کند.
+        </div>
+    </div>
+
+    <div class="card glass-card border-0 col-lg-5 col-md-7 col-12 p-0">
+        <div class="card-body">
+            <form method="POST" class="d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label small text-muted">کلید لایسنس</label>
+                    <input type="text" name="license_key" class="form-control" placeholder="XXXX-XXXX-XXXX-XXXX" required>
+                </div>
+                <button type="submit" class="btn btn-success w-100 rounded-3">
+                    <i class="fas fa-check-circle me-1"></i>
+                    ثبت لایسنس
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light">
+            <i class="fas fa-arrow-right-long me-2"></i>
+            بازگشت به پنل مدیریت
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">
+            <i class="fas fa-sign-out-alt me-2"></i>
+            خروج از حساب
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}مانیتورینگ زنده سرور {{ server.name }} | XMonitor{% endblock %}
+{% block content %}
+<div class="server-monitor-page">
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+        <div>
+            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+                <i class="fas fa-server text-primary"></i>
+                مانیتورینگ زنده سرور
+            </h2>
+            <p class="text-muted mb-0 small">
+                {{ server.name }} — <span style="direction:ltr;">{{ server.ip }}</span>
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2 small">
+            <div class="px-3 py-2 rounded-3 glass-card d-flex flex-column">
+                <span class="text-muted small">حد ترافیک</span>
+                <span class="fw-semibold text-white">
+                    {{ server.traffic_limit or 0 }} GiB
+                </span>
+            </div>
+            <div class="px-3 py-2 rounded-3 glass-card d-flex flex-column">
+                <span class="text-muted small">مصرف ثبت‌شده</span>
+                <span class="fw-semibold text-white">
+                    {{ '%.2f'|format(server.traffic_usage or 0) }} GiB
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12 col-xl-8">
+            <div class="card border-0 glass-card h-100">
+                <div class="card-body d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h3 class="h6 mb-0 text-white d-flex align-items-center gap-2">
+                            <i class="fas fa-wave-square text-primary"></i>
+                            نمودار زنده ترافیک (GiB)
+                        </h3>
+                        <span class="text-muted small">هر ۱ ثانیه به‌روزرسانی می‌شود</span>
+                    </div>
+                    <div style="height:320px;">
+                        <canvas id="chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-4">
+            <div class="card border-0 glass-card h-100">
+                <div class="card-body d-flex flex-column gap-3">
+                    <h3 class="h6 mb-0 text-white d-flex align-items-center gap-2">
+                        <i class="fas fa-circle-info text-primary"></i>
+                        اطلاعات سرور
+                    </h3>
+                    <div class="small text-muted d-flex flex-column gap-1">
+                        <div>
+                            نام سرور:
+                            <span class="text-light fw-semibold">{{ server.name }}</span>
+                        </div>
+                        <div>
+                            IP:
+                            <span class="text-light fw-semibold" style="direction:ltr;">{{ server.ip }}</span>
+                        </div>
+                        <div>
+                            وضعیت:
+                            <span class="badge {% if server.active %}bg-success-subtle text-success{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                                {% if server.active %}فعال{% else %}غیرفعال{% endif %}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="mt-auto d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm rounded-pill">
+                            <i class="fas fa-arrow-right-long me-1"></i>
+                            بازگشت به داشبورد
+                        </a>
+                        {% if session.get('role') in ['admin', 'owner'] %}
+                        <a href="{{ url_for('manage_servers') }}" class="btn btn-outline-secondary btn-sm rounded-pill">
+                            <i class="fas fa-server me-1"></i>
+                            مدیریت سرورها
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const sid = {{server.id}};
+const ctx = document.getElementById('chart');
+let chart;
+
+async function loadSeries() {
+  try {
+    const res = await fetch(`/api/server/${sid}/series?limit=3600`);
+    const data = await res.json();
+    const labels = data.map(p => new Date(p.t).toLocaleTimeString());
+    const values = data.map(p => p.traffic_gb);
+
+    if (!chart) {
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'ترافیک (GiB)',
+            data: values,
+            borderWidth: 2,
+            tension: 0.35,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            x: {
+              ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true },
+              grid: { display: false }
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#9ca3af' },
+              grid: { color: 'rgba(148,163,184,0.25)' }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb' } },
+            tooltip: {
+              backgroundColor: 'rgba(15,23,42,0.9)',
+              borderColor: 'rgba(148,163,184,0.6)',
+              borderWidth: 1
+            }
+          }
+        }
+      });
+    } else {
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = values;
+      chart.update();
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+loadSeries();
+setInterval(loadSeries, 1000);
+</script>
+{% endblock %}
