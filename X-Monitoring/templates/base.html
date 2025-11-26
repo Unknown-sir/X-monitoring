@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}XMonitor{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark app-navbar shadow-sm">
+        <div class="container-fluid px-3 px-lg-4">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('dashboard') }}">
+                <span class="brand-icon d-inline-flex align-items-center justify-content-center rounded-3">
+                    <i class="fas fa-server"></i>
+                </span>
+                <span class="fw-semibold">XMonitor</span>
+            </a>
+
+            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse" id="mainNavbar">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-lg-center">
+                    {% if session.get('user_id') %}
+                        <li class="nav-item">
+                            <a class="nav-link{% if request.endpoint == 'dashboard' %} active{% endif %}" href="{{ url_for('dashboard') }}">
+                                <i class="fas fa-gauge me-1"></i>
+                                داشبورد
+                            </a>
+                        </li>
+
+                        {% if session.get('role') in ['admin', 'owner'] %}
+                            <li class="nav-item dropdown">
+                                <a class="nav-link dropdown-toggle{% if request.endpoint in ['admin_dashboard','manage_servers','manage_users','add_server_page','add_user_page','assign_server_page'] %} active{% endif %}" href="#" id="adminMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-shield-halved me-1"></i>
+                                    مدیریت
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-dark shadow-sm" aria-labelledby="adminMenu">
+                                    <li><a class="dropdown-item" href="{{ url_for('admin_dashboard') }}"><i class="fas fa-cogs me-2"></i>پنل ادمین</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('manage_servers') }}"><i class="fas fa-server me-2"></i>مدیریت سرورها</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('manage_users') }}"><i class="fas fa-users me-2"></i>مدیریت کاربران</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('assign_server_page') }}"><i class="fas fa-link me-2"></i>اتصال سرور به کاربر</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('register_license') }}"><i class="fas fa-key me-2"></i>ثبت لایسنس</a></li>
+                                    {% if session.get('role') == 'owner' %}
+                                        <li><a class="dropdown-item" href="{{ url_for('generate_license') }}"><i class="fas fa-wand-magic-sparkles me-2"></i>تولید لایسنس</a></li>
+                                    {% endif %}
+                                </ul>
+                            </li>
+                        {% endif %}
+                    {% endif %}
+                </ul>
+
+                <div class="d-flex align-items-center gap-3">
+                    <div class="theme-toggle-wrapper d-none d-md-flex align-items-center">
+                        <span class="text-muted small me-2 d-none d-lg-inline">تم</span>
+                        <input type="checkbox" id="themeSwitch" class="d-none">
+                        <label for="themeSwitch" class="theme-switch mb-0">
+                            <span class="theme-icon dark"><i class="fas fa-moon"></i></span>
+                            <span class="theme-icon light"><i class="fas fa-sun"></i></span>
+                        </label>
+                    </div>
+
+                    {% if session.get('user_id') %}
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-light rounded-pill d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="user-avatar d-inline-flex align-items-center justify-content-center rounded-circle">
+                                    <i class="fas fa-user"></i>
+                                </span>
+                                <span class="d-none d-sm-inline text-truncate" style="max-width: 140px;">
+                                    {{ session.get('username', 'User') }}
+                                </span>
+                                <span class="badge bg-primary-subtle text-uppercase ms-1 small">
+                                    {{ session.get('role', '') }}
+                                </span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow-sm">
+                                <li class="dropdown-header small text-muted">
+                                    وارد شده با کاربری {{ session.get('username', 'User') }}
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ url_for('profile') }}">
+                                        <i class="fas fa-id-badge me-2"></i>
+                                        پروفایل
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
+                                        <i class="fas fa-sign-out-alt me-2"></i>
+                                        خروج
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    {% else %}
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-light btn-sm rounded-pill">
+                            <i class="fas fa-sign-in-alt me-1"></i>
+                            ورود
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="app-main container-fluid py-4">
+        <div class="row justify-content-center">
+            <div class="col-12 col-xl-11">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </main>
+
+    <footer class="app-footer text-center text-light py-3 mt-2">
+        <small class="text-muted">
+            © 2025 XMonitor • طراحی و توسعه
+        </small>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}مدیریت سرورها | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+        <div>
+            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+                <i class="fas fa-tools text-primary"></i>
+                مدیریت سرورها
+            </h2>
+            <p class="text-muted mb-0 small">
+                مشاهده و ویرایش اطلاعات تمام سرورها، کنترل وضعیت و ریست ترافیک
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('add_server_page') }}" class="btn btn-sm btn-outline-light rounded-pill">
+                <i class="fas fa-server me-1"></i>
+                افزودن سرور جدید
+            </a>
+            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+                <i class="fas fa-arrow-right-long me-1"></i>
+                بازگشت به پنل مدیریت
+            </a>
+        </div>
+    </div>
+
+    <div class="card border-0 mb-3">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-dark align-middle mb-0">
+                    <thead class="small text-uppercase text-muted">
+                        <tr>
+                            <th scope="col">ID</th>
+                            <th scope="col">نام</th>
+                            <th scope="col">IP</th>
+                            <th scope="col">کاربر SSH</th>
+                            <th scope="col">حد ترافیک (GiB)</th>
+                            <th scope="col">چت آیدی تلگرام</th>
+                            <th scope="col">مصرف ثبت‌شده</th>
+                            <th scope="col">وضعیت</th>
+                            <th scope="col" class="text-end">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for server in servers %}
+                        <tr>
+                            <td class="small text-muted">{{ server[0] }}</td>
+                            <td>
+                                <strong>{{ server[1] }}</strong>
+                            </td>
+                            <td class="text-muted" style="direction:ltr;">
+                                {{ server[2] }}
+                            </td>
+                            <td class="small">
+                                {{ server[3] }}
+                            </td>
+                            <td class="small">
+                                {% if server[5] %}
+                                    {{ server[5] }} GiB
+                                {% else %}
+                                    <span class="text-muted">تعریف نشده</span>
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">
+                                {{ server[6] or "-" }}
+                            </td>
+                            <td class="small">
+                                {{ server[8] or 0 }} GiB
+                            </td>
+                            <td>
+                                {% if server[7] %}
+                                    <span class="badge bg-success-subtle text-success">فعال</span>
+                                {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary">غیرفعال</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <div class="d-flex flex-column gap-2 align-items-end">
+                                    <form method="POST" action="{{ url_for('manage_servers') }}" class="w-100">
+                                        <input type="hidden" name="edit_server_id" value="{{ server[0] }}">
+                                        <div class="row g-1 align-items-center">
+                                            <div class="col-6 col-lg-3">
+                                                <input type="text" name="name" value="{{ server[1] }}" class="form-control form-control-sm" placeholder="نام" required>
+                                            </div>
+                                            <div class="col-6 col-lg-3">
+                                                <input type="text" name="ip" value="{{ server[2] }}" class="form-control form-control-sm" placeholder="IP" required>
+                                            </div>
+                                            <div class="col-6 col-lg-2">
+                                                <input type="text" name="username" value="{{ server[3] }}" class="form-control form-control-sm" placeholder="SSH User" required>
+                                            </div>
+                                            <div class="col-6 col-lg-2">
+                                                <input type="password" name="password" class="form-control form-control-sm" placeholder="پسورد جدید">
+                                            </div>
+                                            <div class="col-6 col-lg-1">
+                                                <input type="number" name="traffic_limit" value="{{ server[5] }}" class="form-control form-control-sm" placeholder="حد">
+                                            </div>
+                                            <div class="col-6 col-lg-3">
+                                                <input type="text" name="telegram_chat_id" value="{{ server[6] }}" class="form-control form-control-sm" placeholder="Chat ID">
+                                            </div>
+                                            <div class="col-12 col-lg-auto text-end mt-1 mt-lg-0">
+                                                <button type="submit" class="btn btn-primary btn-sm rounded-pill">
+                                                    <i class="fas fa-save me-1"></i>
+                                                    ذخیره
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </form>
+
+                                    {% if session.get('role') == 'owner' %}
+                                    <form method="POST"
+                                          action="{{ url_for('update_server_limit', server_id=server[0]) }}"
+                                          class="limit-inline-form">
+                                        <input type="number"
+                                               step="0.1"
+                                               min="0"
+                                               name="traffic_limit"
+                                               value="{{ server[5] or '' }}"
+                                               class="form-control form-control-sm"
+                                               placeholder="حد (GiB)">
+                                        <button type="submit" class="btn btn-glass-limit btn-sm">
+                                            <i class="fas fa-sliders"></i>
+                                            تغییر حد
+                                        </button>
+                                    </form>
+                                    {% endif %}
+
+                                    <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                        <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-warning rounded-pill">
+                                            <i class="fas fa-power-off me-1"></i>
+                                            {% if server[7] %}غیرفعال{% else %}فعال{% endif %}
+                                        </a>
+                                        <a href="{{ url_for('reset_traffic', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
+                                            <i class="fas fa-sync me-1"></i>
+                                            ریست ترافیک
+                                        </a>
+                                        <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-light rounded-pill">
+                                            <i class="fas fa-chart-line me-1"></i>
+                                            مانیتور
+                                        </a>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light">
+            <i class="fas fa-arrow-right-long me-2"></i>
+            بازگشت به پنل مدیریت
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">
+            <i class="fas fa-sign-out-alt me-2"></i>
+            خروج از حساب
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}License Result{% endblock %}
+{% block content %}
+<div class="container mt-5 text-center">
+    {% if valid %}
+    <div class="alert alert-success animate__animated animate__bounceIn">
+        <h2><i class="fas fa-check-circle"></i> تبریک!</h2>
+        <p>مانیتورینگ شما با لایسنس <strong>{{ license_key }}</strong> به مدت <strong>{{ '5' if is_trial else '30' }}</strong> روز فعال گردید.</p>
+        <p>زمان باقی‌مونده: <strong>{{ days_left }}</strong> روز</p>
+    </div>
+    {% else %}
+    <div class="alert alert-danger animate__animated animate__shakeX">
+        <h2><i class="fas fa-exclamation-circle"></i> خطا</h2>
+        <p>لایسنس <strong>{{ license_key }}</strong> نامعتبر است!</p>
+    </div>
+    {% endif %}
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary mt-3"><i class="fas fa-arrow-left"></i> بازگشت به داشبورد</a>
+    <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3"><i class="fas fa-sign-out-alt"></i> خروج</a>
+</div>
+
+<!-- اضافه کردن Animate.css -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+{% endblock %}
