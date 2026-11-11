@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}مدیریت هاست‌های ESXi | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+        <i class="fas fa-server text-primary"></i>
+        مدیریت هاست‌های ESXi
+      </h2>
+      <p class="text-muted mb-0 small">
+        پیکربندی هاست‌های مجازی‌ساز ESXi برای ساخت خودکار سرور، ریبیلد و کنترل سخت‌افزاری پورت شبکه
+      </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-primary rounded-pill">
+        <i class="fas fa-plus-circle me-1"></i>
+        ساخت سرور مجازی جدید
+      </a>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right-long me-1"></i>
+        بازگشت به پنل مدیریت
+      </a>
+    </div>
+  </div>
+
+  <!-- فرم افزودن هاست جدید -->
+  <div class="card border-0 glass-card mb-4">
+    <div class="card-body">
+      <h5 class="text-white mb-3 d-flex align-items-center gap-2">
+        <i class="fas fa-plus text-primary"></i>
+        افزودن هاست ESXi جدید
+      </h5>
+      <form method="POST" action="{{ url_for('esxi_hosts_page') }}" class="row g-3">
+        <input type="hidden" name="action" value="add">
+        <div class="col-md-3">
+          <label class="form-label small text-muted">نام نمایشی هاست</label>
+          <input type="text" name="name" class="form-control form-control-sm" placeholder="مثلاً: Hetzner Node 1" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small text-muted">IP سرور ESXi</label>
+          <input type="text" name="ip" class="form-control form-control-sm" placeholder="192.168.1.100" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small text-muted">پورت SSH</label>
+          <input type="number" name="port" class="form-control form-control-sm" value="22" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small text-muted">یوزر root</label>
+          <input type="text" name="username" class="form-control form-control-sm" value="root" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small text-muted">پسورد root</label>
+          <input type="password" name="password" class="form-control form-control-sm" placeholder="پسورد ESXi" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small text-muted">دیتاستور پیش‌فرض</label>
+          <input type="text" name="default_datastore" class="form-control form-control-sm" value="datastore1" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small text-muted">نام پورت‌گروپ شبکه (vSwitch)</label>
+          <input type="text" name="default_network" class="form-control form-control-sm" value="VM Network" required>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small text-muted">مسیر تمپلیت دیسک مرجع اوبونتو (Golden Image)</label>
+          <input type="text" name="template_vmdk" class="form-control form-control-sm" placeholder="/vmfs/volumes/datastore1/templates/ubuntu-22.04.vmdk" required>
+        </div>
+        <div class="col-md-2 d-grid align-self-end">
+          <button type="submit" class="btn btn-success btn-sm rounded-3">
+            <i class="fas fa-save me-1"></i>
+            ذخیره هاست
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- لیست هاست‌های ثبت‌شده -->
+  <div class="card border-0 mb-3">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark align-middle mb-0">
+          <thead class="small text-uppercase text-muted">
+            <tr>
+              <th>ID</th>
+              <th>نام هاست</th>
+              <th>IP و پورت</th>
+              <th>دیتاستور</th>
+              <th>شبکه پیش‌فرض</th>
+              <th>مسیر تمپلیت مرجع</th>
+              <th>وضعیت اتصال</th>
+              <th class="text-end">عملیات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for host in esxi_hosts %}
+            <tr>
+              <td class="small text-muted">{{ host.id }}</td>
+              <td><strong>{{ host.name }}</strong></td>
+              <td class="small text-muted" style="direction:ltr;">{{ host.ip }}:{{ host.port }}</td>
+              <td class="small">{{ host.default_datastore }}</td>
+              <td class="small">{{ host.default_network }}</td>
+              <td class="small text-muted" style="direction:ltr;">{{ host.template_vmdk or "-" }}</td>
+              <td>
+                <span id="host_status_{{ host.id }}" class="badge bg-secondary-subtle text-secondary">
+                  نامشخص
+                </span>
+              </td>
+              <td class="text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                  <button type="button" class="btn btn-sm btn-outline-info rounded-pill" onclick="testConnection({{ host.id }})">
+                    <i class="fas fa-plug me-1"></i>
+                    تست اتصال
+                  </button>
+                  <a href="{{ url_for('delete_esxi_host', host_id=host.id) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این هاست مطمئنید؟')">
+                    <i class="fas fa-trash me-1"></i>
+                    حذف
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                هنوز هیچ سرور ESXi ثبت نشده است. از فرم بالا اولین هاست خود را اضافه کنید.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function testConnection(hostId) {
+  const badge = document.getElementById('host_status_' + hostId);
+  badge.className = 'badge bg-warning-subtle text-warning';
+  badge.textContent = 'در حال تست...';
+  
+  fetch('/esxi_hosts/test/' + hostId)
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        badge.className = 'badge bg-success-subtle text-success';
+        badge.textContent = 'متصل (' + data.message + ')';
+      } else {
+        badge.className = 'badge bg-danger-subtle text-danger';
+        badge.textContent = 'خطا: ' + data.message;
+      }
+    })
+    .catch(err => {
+      badge.className = 'badge bg-danger-subtle text-danger';
+      badge.textContent = 'خطای ارتباط با پنل';
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}ساخت سرور مجازی در ESXi | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+        <i class="fas fa-microchip text-primary"></i>
+        ساخت خودکار سرور مجازی (Ubuntu on ESXi)
+      </h2>
+      <p class="text-muted mb-0 small">
+        کلون سریع از تمپلیت مرجع، تنظیم مشخصات سخت‌افزاری و تولید خودکار پیکربندی Netplan
+      </p>
+    </div>
+    <div>
+      <a href="{{ url_for('manage_servers') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right-long me-1"></i>
+        بازگشت به مدیریت سرورها
+      </a>
+    </div>
+  </div>
+
+  {% if not esxi_hosts %}
+  <div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    هنوز هیچ سرور ESXi در سیستم ثبت نشده است. ابتدا از بخش <a href="{{ url_for('esxi_hosts_page') }}" class="alert-link">مدیریت هاست‌های ESXi</a> اطلاعات هاست خود را وارد کنید.
+  </div>
+  {% else %}
+
+  <form method="POST" action="{{ url_for('create_vm_page') }}" class="card border-0 glass-card p-4">
+    <div class="row g-4">
+      <!-- بخش ۱: انتخاب هاست و منابع پایه -->
+      <div class="col-12">
+        <h5 class="text-white border-bottom border-secondary pb-2 mb-3">
+          <i class="fas fa-server text-primary me-2"></i>
+          ۱. هاست ESXi و مشخصات ماشین مجازی
+        </h5>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small text-muted">انتخاب هاست ESXi</label>
+            <select name="esxi_host_id" id="esxi_host_select" class="form-select form-select-sm" required onchange="updateHostDefaults()">
+              {% for host in esxi_hosts %}
+              <option value="{{ host.id }}" 
+                      data-datastore="{{ host.default_datastore }}" 
+                      data-network="{{ host.default_network }}" 
+                      data-template="{{ host.template_vmdk or '' }}">
+                {{ host.name }} ({{ host.ip }})
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small text-muted">نام ماشین مجازی (VM Name)</label>
+            <input type="text" name="vm_name" class="form-control form-control-sm" placeholder="مثلاً: ubuntu-client-01" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small text-muted">نام دیتاستور</label>
+            <input type="text" name="datastore" id="datastore_input" class="form-control form-control-sm" value="{{ esxi_hosts[0].default_datastore }}" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">مسیر تمپلیت مرجع (Golden Image VMDK)</label>
+            <input type="text" name="template_vmdk" id="template_input" class="form-control form-control-sm" value="{{ esxi_hosts[0].template_vmdk or '' }}" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">پورت‌گروپ شبکه ESXi (vSwitch PortGroup)</label>
+            <input type="text" name="network_name" id="network_input" class="form-control form-control-sm" value="{{ esxi_hosts[0].default_network }}" required>
+          </div>
+        </div>
+      </div>
+
+      <!-- بخش ۲: منابع سخت‌افزاری -->
+      <div class="col-12">
+        <h5 class="text-white border-bottom border-secondary pb-2 mb-3">
+          <i class="fas fa-sliders text-primary me-2"></i>
+          ۲. منابع سخت‌افزاری
+        </h5>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">تعداد هسته پردازنده (vCPU)</label>
+            <input type="number" name="cpus" class="form-control form-control-sm" min="1" max="64" value="2" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">حافظه رم (RAM به مگابایت)</label>
+            <input type="number" name="ram_mb" class="form-control form-control-sm" min="512" step="512" value="2048" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">حجم دیسک (GB)</label>
+            <input type="number" name="disk_gb" class="form-control form-control-sm" min="10" value="30" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">مک آدرس اختصاصی کارت شبکه (اختیاری)</label>
+            <input type="text" name="mac_address" class="form-control form-control-sm" placeholder="مثلاً: 00:50:56:00:11:22">
+          </div>
+        </div>
+      </div>
+
+      <!-- بخش ۳: پیکربندی شبکه (Netplan اوبونتو) -->
+      <div class="col-12">
+        <h5 class="text-white border-bottom border-secondary pb-2 mb-3">
+          <i class="fas fa-network-wired text-primary me-2"></i>
+          ۳. پیکربندی شبکه (Netplan)
+        </h5>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small text-muted">IP اصلی سرور (IPv4)</label>
+            <input type="text" name="primary_ip" class="form-control form-control-sm" placeholder="185.42.212.241" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small text-muted">نت‌ماسک / پیشوند (CIDR Prefix)</label>
+            <input type="text" name="netmask" class="form-control form-control-sm" placeholder="25 یا 255.255.255.128" value="25" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small text-muted">Gateway اصلی (IPv4)</label>
+            <input type="text" name="gateway" class="form-control form-control-sm" placeholder="185.42.212.129" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">آدرس IPv6 (اختیاری)</label>
+            <input type="text" name="ipv6" class="form-control form-control-sm" placeholder="2a13:9540:0000:0034:0000:0000:29ec:b785/64">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">Gateway آدرس IPv6 (اختیاری)</label>
+            <input type="text" name="ipv6_gateway" class="form-control form-control-sm" placeholder="2a13:9540:0:34::1">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label small text-muted">آی‌پی‌های اضافه (Extra IPs - اختیاری، با ویرگول یا خط بعد جدا کنید)</label>
+            <textarea name="extra_ips" class="form-control form-control-sm" rows="2" placeholder="185.42.212.242, 185.42.212.243"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- بخش ۴: مشخصات ورود و انتساب به کاربر -->
+      <div class="col-12">
+        <h5 class="text-white border-bottom border-secondary pb-2 mb-3">
+          <i class="fas fa-user-lock text-primary me-2"></i>
+          ۴. دسترسی SSH و تخصیص مشتری
+        </h5>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label class="form-label small text-muted">کاربر SSH سرور</label>
+            <input type="text" name="username" class="form-control form-control-sm" value="root" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">رمز عبور SSH سرور</label>
+            <input type="password" name="password" class="form-control form-control-sm" placeholder="رمز عبور اوبونتو" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">تخصیص به کاربر پنل</label>
+            <select name="user_id" class="form-select form-select-sm">
+              <option value="">بدون انتساب (فقط ادمین)</option>
+              {% for u in users %}
+              <option value="{{ u[0] }}">{{ u[1] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small text-muted">سقف ترافیک ماهیانه (GiB)</label>
+            <input type="number" name="traffic_limit" class="form-control form-control-sm" value="1000" required>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 text-end mt-4">
+        <button type="submit" class="btn btn-primary btn-lg rounded-pill px-5">
+          <i class="fas fa-rocket me-2"></i>
+          ساخت و استقرار ماشین مجازی
+        </button>
+      </div>
+    </div>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+function updateHostDefaults() {
+  const select = document.getElementById('esxi_host_select');
+  const opt = select.options[select.selectedIndex];
+  if (opt) {
+    document.getElementById('datastore_input').value = opt.getAttribute('data-datastore') || 'datastore1';
+    document.getElementById('network_input').value = opt.getAttribute('data-network') || 'VM Network';
+    document.getElementById('template_input').value = opt.getAttribute('data-template') || '';
+  }
+}
+</script>
+{% endblock %}

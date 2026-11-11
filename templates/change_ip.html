@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}تغییر و تخصیص آی‌پی سرور {{ server.name }} | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+        <i class="fas fa-network-wired text-primary"></i>
+        مدیریت و تغییر آی‌پی سرور: {{ server.name }}
+      </h2>
+      <p class="text-muted mb-0 small">
+        تغییر آی‌پی اصلی، گیت‌وی، آی‌پی‌های اضافه و اعمال خودکار فایل Netplan روی اوبونتو
+      </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('manage_servers') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right-long me-1"></i>
+        بازگشت به مدیریت سرورها
+      </a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <form method="POST" action="{{ url_for('change_ip_page', server_id=server.id) }}" class="card border-0 glass-card p-4">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small text-muted">آی‌پی اصلی سرور (Primary IPv4)</label>
+            <input type="text" name="primary_ip" id="input_primary_ip" class="form-control" value="{{ server.ip }}" required oninput="renderPreview()">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">پیشوند / نت‌ماسک (CIDR Prefix)</label>
+            <input type="text" name="netmask" id="input_netmask" class="form-control" value="{{ server.netmask or '24' }}" required oninput="renderPreview()">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label small text-muted">گیت‌وی اصلی (IPv4 Gateway)</label>
+            <input type="text" name="gateway" id="input_gateway" class="form-control" value="{{ server.gateway or '' }}" required oninput="renderPreview()">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">آدرس IPv6 (اختیاری)</label>
+            <input type="text" name="ipv6" id="input_ipv6" class="form-control" value="{{ server.ipv6 or '' }}" oninput="renderPreview()">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small text-muted">Gateway آدرس IPv6 (اختیاری)</label>
+            <input type="text" name="ipv6_gateway" id="input_ipv6_gw" class="form-control" value="{{ server.ipv6_gateway or '' }}" oninput="renderPreview()">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label small text-muted">آی‌پی‌های ثانویه / اضافه (Extra IPs - با کاما یا خط بعد جدا کنید)</label>
+            <textarea name="extra_ips" id="input_extra_ips" class="form-control" rows="2" placeholder="185.42.212.242, 185.42.212.243" oninput="renderPreview()">{{ server.extra_ips or '' }}</textarea>
+          </div>
+          <div class="col-md-12">
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" name="apply_remote" id="apply_remote" value="1" checked>
+              <label class="form-check-label text-light small" for="apply_remote">
+                اعمال آنی تنظیمات روی سرور از طریق SSH با دستور <code>sudo netplan apply</code>
+              </label>
+            </div>
+          </div>
+          <div class="col-12 text-end mt-3">
+            <button type="submit" class="btn btn-primary rounded-pill px-4">
+              <i class="fas fa-check-circle me-1"></i>
+              ذخیره و اعمال تنظیمات شبکه
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- پیش‌نمایش آنی فایل Netplan -->
+    <div class="col-lg-5">
+      <div class="card border-0 glass-card p-3 h-100">
+        <h6 class="text-white mb-2 d-flex align-items-center gap-2">
+          <i class="fas fa-file-code text-info"></i>
+          پیش‌نمایش فایل <code>/etc/netplan/01-netcfg.yaml</code>
+        </h6>
+        <pre id="netplan_preview" class="p-3 bg-dark text-success rounded-3 small text-start" style="direction:ltr; font-family:monospace; min-height:300px; white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function renderPreview() {
+  const ip = document.getElementById('input_primary_ip').value.trim();
+  const netmask = document.getElementById('input_netmask').value.trim().replace('/', '');
+  const gw = document.getElementById('input_gateway').value.trim();
+  const ipv6 = document.getElementById('input_ipv6').value.trim();
+  const ipv6gw = document.getElementById('input_ipv6_gw').value.trim();
+  const extraRaw = document.getElementById('input_extra_ips').value;
+  
+  let addrLines = [];
+  if (ip) {
+    addrLines.push('        - ' + ip + (ip.includes('/') ? '' : '/' + (netmask || '24')));
+  }
+  
+  const extraList = extraRaw.split(/[,\n]/).map(s => s.trim()).filter(s => s.length > 0);
+  for (const e of extraList) {
+    addrLines.push('        - ' + e + (e.includes('/') ? '' : '/' + (netmask || '24')));
+  }
+  if (ipv6) {
+    addrLines.push('        - ' + ipv6);
+  }
+
+  let routeLines = [];
+  if (gw) {
+    routeLines.push('        - to: 0.0.0.0/0\n          via: ' + gw);
+  }
+  if (ipv6gw) {
+    routeLines.push('        - to: ::/0\n          via: ' + ipv6gw);
+  }
+
+  const yaml = 
+`network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: false
+      dhcp6: false
+      addresses:
+` + addrLines.join('\n') + `
+      routes:
+` + routeLines.join('\n') + `
+      nameservers:
+        addresses: [8.8.8.8, 8.8.4.4, 2001:4860:4860::8888, 2001:4860:4860::8844]
+`;
+  document.getElementById('netplan_preview').textContent = yaml;
+}
+
+renderPreview();
+</script>
+{% endblock %}

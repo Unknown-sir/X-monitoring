@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}اتصال سرور به کاربر | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+        <div>
+            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+                <i class="fas fa-link text-primary"></i>
+                اتصال سرور به کاربر
+            </h2>
+            <p class="text-muted mb-0 small">
+                انتخاب کاربر و سرور برای تعریف دسترسی مشاهده و مانیتور
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+                <i class="fas fa-arrow-right-long me-1"></i>
+                بازگشت به پنل مدیریت
+            </a>
+        </div>
+    </div>
+
+    <div class="card border-0 mb-3">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('assign_server_page') }}" class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label small text-muted">کاربر</label>
+                    <select name="user_id" class="form-select" required>
+                        {% for user in users %}
+                        <option value="{{ user[0] }}">{{ user[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small text-muted">سرور</label>
+                    <select name="server_id" class="form-select" required>
+                        {% for server in servers %}
+                        <option value="{{ server[0] }}">{{ server[1] }} ({{ server[2] }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button type="submit" class="btn btn-primary rounded-3">
+                        <i class="fas fa-link me-1"></i>
+                        اتصال
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light">
+            <i class="fas fa-arrow-right-long me-2"></i>
+            بازگشت به پنل مدیریت
+        </a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">
+            <i class="fas fa-sign-out-alt me-2"></i>
+            خروج از حساب
+        </a>
+    </div>
+</div>
+{% endblock %}

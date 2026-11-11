@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}ورود | XMonitor{% endblock %}
+{% block content %}
+<div class="login-page d-flex justify-content-center align-items-center" style="min-height:70vh;">
+    <div class="card glass-card border-0 col-md-4 col-11 p-0">
+        <div class="card-body">
+            <h2 class="h5 text-center text-white mb-4 d-flex align-items-center justify-content-center gap-2">
+                <i class="fas fa-sign-in-alt text-primary"></i>
+                ورود به پنل
+            </h2>
+            <form method="POST" class="d-flex flex-column gap-3">
+                <div>
+                    <label for="username" class="form-label small text-muted">نام کاربری</label>
+                    <input type="text" class="form-control" id="username" name="username" required>
+                </div>
+                <div>
+                    <label for="password" class="form-label small text-muted">رمز عبور</label>
+                    <input type="password" class="form-control" id="password" name="password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 rounded-3">
+                    <i class="fas fa-sign-in-alt me-1"></i>
+                    ورود
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
