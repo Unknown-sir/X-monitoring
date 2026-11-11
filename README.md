@@ -1,225 +1,131 @@
-# XMonitor
-<div align="center"><img src="https://uploadkon.ir/uploads/cb0526_25login.jpg" width="500"></div>
-<div align="center"><img src="https://uploadkon.ir/uploads/74b426_25panel.jpg" width="500"></div>
-<div align="center"><br>
-<a href="https://github.com/Unknown-sir/X-monitoring/blob/main/README.fa.md">برای توضیحات فارسی اینجا کلیک کنید</a>
+# XMonitor – Server Traffic Monitoring & ESXi Automation Panel
+
+<div align="center">
+  <img src="static/img/logo.png" width="110" alt="XMonitor Logo"><br><br>
+  <img src="docs/images/login.jpg" width="450" alt="Login Screen">
+  &nbsp;
+  <img src="docs/images/panel.jpg" width="510" alt="Dashboard Screen">
 </div>
 
-
-XMonitor is a lightweight server traffic monitoring panel built with Flask,
-a background SSH worker and a Telegram bot.
-
-It is designed for hosting providers and administrators who need a
-simple way to monitor data usage on multiple Linux servers using `vnstat`.
-
-> **Languages:** Code comments are in Persian.  
-> This README is in English so it is easier to share publicly on GitHub.
+<div align="center"><br>
+  <a href="README.fa.md"><strong>🇮🇷 برای مشاهده راهنمای کامل به زبان فارسی اینجا کلیک کنید</strong></a>
+</div>
 
 ---
 
-## Features
+**XMonitor** is an enterprise-ready, lightweight Linux server traffic monitoring panel, ESXi virtualization automation system, and Telegram bot built with **Flask**, **SQLAlchemy**, **Paramiko**, and **Redis**.
 
-- Web dashboard with owner / admin / user roles
-- License-based access (trial / full)
-- Per-server traffic limit and reset date
-- Live traffic usage and historical samples
-- Telegram bot:
-  - List servers
-  - Change traffic limits (owner only)
-  - View recent events/alerts
-- Email & Telegram notifications
-- Worker process that:
-  - Connects to each server via SSH (Paramiko)
-  - Reads traffic usage using `vnstat`
-  - Stores samples in MySQL using SQLAlchemy
-- Redis cache for faster server list responses
+It allows hosting providers, system administrators, and VPS resellers to automate Ubuntu virtual machine deployment on standalone **VMware ESXi** hosts, configure static networking via **Netplan**, monitor bandwidth consumption in real time using `vnstat`, and enforce hardware-level network suspension when bandwidth quotas are reached.
 
 ---
 
-## Project structure
+## Key Features
+
+### 🚀 ESXi Virtualization & Automation
+- **Automated Ubuntu VM Deployment:** Rapid thin-provisioned cloning from reference Golden Images using `vmkfstools -i`, dynamic `.vmx` hardware profile generation, and automated registration via `vim-cmd solo/registervm`.
+- **One-Click VM Rebuild:** Re-clones the operating system disk from the template image in under 60 seconds without destroying VM registrations.
+- **Hardware vNIC Traffic Suspension:** When a server reaches its bandwidth quota, the background worker automatically disconnects the virtual network card on ESXi (`vim-cmd vmsvc/device.connection <vmid> 4000 0`) rather than terminating the OS, preventing data loss.
+- **Instant Network Un-suspension:** When an administrator or customer recharges bandwidth via the web panel or Telegram bot, the network interface is instantly reconnected (`connected = True`).
+- **Complete IP & Netplan Management:** Supports primary IPv4, custom CIDR netmask, IPv4 gateway, IPv6 address and gateway, and multiple secondary (extra) IPs. Automatically generates and applies `/etc/netplan/01-netcfg.yaml` remotely via SSH.
+
+### 📊 Real-Time Monitoring & Web Dashboard
+- Multi-role access control: **Owner**, **Admin**, and **Customer/User**.
+- Live resource monitoring: CPU cores & load, RAM usage, live network bandwidth (rx/tx in Mbps), disk space & read/write I/O, and ping latency.
+- Historical traffic data charts powered by **Chart.js**.
+- High-performance caching layer with **Redis**.
+- Automated notifications via **Email (SMTP)** and **Telegram Bot**.
+
+### 🤖 Telegram Bot Management
+- Interactive inline keyboard interface.
+- List active servers, real-time traffic usage, and network link statuses (`🟢 Connected` / `🔴 Suspended`).
+- Bandwidth recharge command (`/recharge`) that re-enables network ports on the fly.
+- Traffic limit configuration (`/setlimit`) restricted to the Owner.
+- Broadcast announcements and support ticketing system.
+
+---
+
+## Project Structure
 
 ```text
-app.py                     # Flask web panel (SQLite + Redis + Telegram notifier)
-worker.py                  # SSH + vnstat monitoring worker (MySQL via SQLAlchemy)
-bot.py                     # Standalone Telegram bot (python-telegram-bot)
-db.py                      # SQLAlchemy engine/session (uses DB_URL env)
-models.py                  # ORM models: Server, TrafficSample, Event
-migrate_sqlite_to_mysql.py # Helper script to migrate servers from SQLite to MySQL
-
-templates/                 # Jinja2 templates (dashboard, login, admin, etc.)
-static/                    # CSS & JS (including live dashboard refresh)
-.env.example               # Sample environment variables (no secrets)
-config.example.json        # Sample license config
-requirements.txt           # Python dependencies
-docs/
-  INSTALL.md               # Local/dev installation
-  DEPLOYMENT.md            # Production deployment guide
+X-monitoring/
+├── app.py                     # Main Flask application (Web panel, APIs, and background monitor)
+├── esxi_manager.py            # Standalone ESXi SSH automation engine & Netplan generator
+├── worker.py                  # Background SSH monitoring worker & ESXi vNIC suspension handler
+├── bot.py                     # Independent interactive Telegram Bot (python-telegram-bot)
+├── db.py                      # SQLAlchemy database engine and session factory
+├── models.py                  # ORM Models: Server, EsxiHost, TrafficSample, Event
+├── migrate_sqlite_to_mysql.py # SQLite to MySQL migration script
+│
+├── templates/                 # Responsive Jinja2 HTML templates
+│   ├── base.html              # Core application layout and RTL navigation
+│   ├── dashboard.html         # User and admin dashboard with recharge actions
+│   ├── manage_servers.html    # Server administration, IP settings, and rebuilds
+│   ├── create_vm.html         # Comprehensive ESXi VM creation wizard
+│   ├── esxi_hosts.html        # ESXi node connectivity and credential manager
+│   ├── change_ip.html         # IP reallocation & live Netplan YAML previewer
+│   └── ...
+│
+├── static/                    # CSS stylesheets, JavaScript files, and logos
+│   ├── css/style.css
+│   ├── js/script.js
+│   └── img/logo.png
+│
+├── docs/                      # Documentation and screenshots
+│   ├── images/                # Local screenshots (login.jpg, panel.jpg)
+│   ├── INSTALL.md             # Local development setup guide
+│   └── DEPLOYMENT.md          # Production deployment guide (Gunicorn, Nginx, Systemd)
+│
+├── .env.example               # Template environment configuration
+├── config.example.json        # License configuration template
+└── requirements.txt           # Python dependencies
 ```
 
 ---
 
-## Quick start (development)
+## Installation & Quick Start
 
-### 1. Requirements
-
-- Python 3.10+
+### 1. Prerequisites
+- Python 3.10 or newer
 - Redis server
-- SQLite (built-in with Python)
-- MySQL or MariaDB (recommended for the worker & bot)
-- `vnstat` installed on each **monitored** Linux server
+- VMware ESXi 6.7 / 7.0 / 8.0 with SSH access enabled
+- `vnstat` installed on monitored guest servers
 
-### 2. Clone & install
-
+### 2. Clone the Repository
 ```bash
 git clone https://github.com/Unknown-sir/X-monitoring.git
 cd X-monitoring
+```
 
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
+### 3. Create a Virtual Environment
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3. Environment & config
-
-Copy the sample files and edit them:
-
+### 4. Configuration
+Create `.env` and `config.json` from the provided templates:
 ```bash
 cp .env.example .env
 cp config.example.json config.json
 ```
 
-Then open `.env` and set at least:
+Edit `.env` with your preferred settings:
+```dotenv
+SECRET_KEY=your_strong_random_secret_key
+OWNER_PASSWORD=YourSecureOwnerPassword!
+TELEGRAM_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+ADMIN_CHAT_ID=your_telegram_chat_id
+```
 
-- `SECRET_KEY`
-- `DB_PASSWORD` (if you use encrypted SQLite)
-- `DB_URL` (MySQL URL for the monitoring database)
-- `TELEGRAM_TOKEN` & `ADMIN_CHAT_ID`
-- `BOT_TOKEN`, `BOT_ADMINS`, `BOT_OWNER_ID`
-- SMTP settings (`EMAIL_FROM`, `EMAIL_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`)
-
-
----
-
-## Running the web panel
-
+### 5. Launch Application
 ```bash
-source .venv/bin/activate
 python app.py
 ```
-
-By default it will listen on:
-
-- `http://0.0.0.0:5000`
-
-On first run, the SQLite database (`database.db`) and tables are created automatically.
-The owner password is read from `OWNER_PASSWORD` in `.env`.
-
----
-
-## Running the monitoring worker
-
-The worker uses **MySQL** (via SQLAlchemy and `DB_URL`) and reads traffic from your
-servers using `vnstat`.
-
-```bash
-source .venv/bin/activate
-MONITOR_INTERVAL=10 python worker.py
-```
-
-Notes:
-
-- `MONITOR_INTERVAL` is in **seconds** (default: `1.0` but 10–60 is usually better in production).
-- Each server gets its own monitoring thread.
-- Each monitored server must have:
-  - `vnstat` installed and configured
-  - SSH access with the username/password stored in the `servers` table
-
----
-
-## Running the Telegram bot
-
-```bash
-source .venv/bin/activate
-BOT_TOKEN=your_bot_token BOT_ADMINS=123456789 python bot.py
-```
-
-Features:
-
-- `/start` – basic info
-- `/list` – list servers
-- `/events` – last events
-- `/setlimit` – change traffic limit (owner only)
-- `/edit` – edit server settings
-
-You must set:
-
-- `BOT_TOKEN`
-- `BOT_ADMINS` (comma-separated chat IDs)
-- `BOT_OWNER_ID` (ID of the main owner)
-
----
-
-## Migrating from SQLite to MySQL
-
-If you have an existing `database.db` with servers defined in SQLite,
-you can migrate the `servers` table to MySQL:
-
-```bash
-source .venv/bin/activate
-export DB_URL='mysql+pymysql://user:pass@127.0.0.1/xmonitor?charset=utf8mb4'
-python migrate_sqlite_to_mysql.py /path/to/database.db
-```
-
-This will:
-
-- Create the `servers` table in the MySQL database (if needed)
-- Copy all servers from SQLite into MySQL
-
----
-
-## Production deployment
-
-For production you typically want:
-
-- A dedicated Linux VPS (Ubuntu 22.04+)
-- MySQL/MariaDB and Redis running as services
-- `gunicorn` (or another WSGI server) in front of `app.py`
-- `nginx` as reverse proxy for HTTPS
-- `systemd` services for:
-  - Web app (gunicorn)
-  - Worker (`worker.py`)
-  - Telegram bot (`bot.py`)
-
-See `docs/DEPLOYMENT.md` for a step-by-step guide.
-
----
-
-## Hardware recommendations
-
-Very roughly (for typical usage):
-
-- Up to **20 monitored servers**  
-  → 1 vCPU, 1–2 GB RAM, 20 GB disk
-
-- Around **20–100 servers**  
-  → 2 vCPU, 4 GB RAM, faster disk (SSD, which is standard on most VPSes)
-
-- Above **100 servers**  
-  → 4+ vCPU, 8+ GB RAM, and proper MySQL tuning
-
-Factors that increase resource usage:
-
-- Very small `MONITOR_INTERVAL` (e.g. 1 second)
-- Many servers with slow SSH connections
-- Long retention for `traffic_samples` and large MySQL dataset
-
-You can always start small (e.g. 2 GB RAM) and monitor CPU/RAM usage
-from the hypervisor or your hosting provider.
+Access the web panel at `http://localhost:5000`.
 
 ---
 
 ## License
-
-You can choose your own license (MIT, proprietary, etc).
-Add a `LICENSE` file if you want the project to be clearly open-source.
+This project is licensed under the MIT License.
