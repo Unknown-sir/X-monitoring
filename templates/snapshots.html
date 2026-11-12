@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}مدیریت اسنپ‌شات‌های سرور {{ server.name }} | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+        <i class="fas fa-camera text-primary"></i>
+        مدیریت اسنپ‌شات‌های سرور: {{ server.name }}
+      </h2>
+      <p class="text-muted mb-0 small">
+        VMID در ESXi: <strong>{{ server.vmid }}</strong> — گرفتن نسخه پشتیبان لحظه‌ای و بازگردانی آنی
+      </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-light rounded-pill">
+        <i class="fas fa-gauge me-1"></i>
+        داشبورد
+      </a>
+      {% if session.get('role') in ['admin', 'owner'] %}
+      <a href="{{ url_for('manage_servers') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right-long me-1"></i>
+        مدیریت سرورها
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if error_msg %}
+  <div class="alert alert-danger">{{ error_msg }}</div>
+  {% endif %}
+
+  <!-- فرم ساخت اسنپ‌شات جدید -->
+  <div class="card border-0 glass-card mb-4">
+    <div class="card-body">
+      <h5 class="text-white mb-3 d-flex align-items-center gap-2">
+        <i class="fas fa-plus-circle text-success"></i>
+        ایجاد اسنپ‌شات جدید
+      </h5>
+      <form method="POST" action="{{ url_for('snapshots_page', server_id=server.id) }}" class="row g-3 align-items-end">
+        <div class="col-md-4">
+          <label class="form-label small text-muted">نام اسنپ‌شات (انگلیسی بدون فاصله)</label>
+          <input type="text" name="name" class="form-control form-control-sm" placeholder="before_update_1" required>
+        </div>
+        <div class="col-md-5">
+          <label class="form-label small text-muted">توضیحات (اختیاری)</label>
+          <input type="text" name="description" class="form-control form-control-sm" placeholder="نسخه پشتیبان قبل از نصب پکیج">
+        </div>
+        <div class="col-md-3 d-grid">
+          <button type="submit" class="btn btn-success btn-sm rounded-3">
+            <i class="fas fa-camera me-1"></i>
+            گرفتن اسنپ‌شات
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- لیست اسنپ‌شات‌ها -->
+  <div class="card border-0">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark align-middle mb-0">
+          <thead class="small text-uppercase text-muted">
+            <tr>
+              <th>ID</th>
+              <th>نام اسنپ‌شات</th>
+              <th>توضیحات</th>
+              <th>تاریخ ایجاد</th>
+              <th>وضعیت</th>
+              <th class="text-end">عملیات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for snap in snapshots %}
+            <tr>
+              <td class="small text-muted">#{{ snap.id }}</td>
+              <td><strong>{{ snap.name }}</strong></td>
+              <td class="small text-muted">{{ snap.description or "-" }}</td>
+              <td class="small text-muted" style="direction:ltr;">{{ snap.created_on or "-" }}</td>
+              <td>
+                <span class="badge bg-info-subtle text-info">{{ snap.state or "Active" }}</span>
+              </td>
+              <td class="text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                  <form method="POST" action="{{ url_for('revert_snapshot_action', server_id=server.id, snap_id=snap.id) }}" class="d-inline" onsubmit="return confirm('آیا مطمئنید که می‌خواهید سرور را به این اسنپ‌شات بازگردانی کنید؟')">
+                    <button type="submit" class="btn btn-sm btn-outline-warning rounded-pill">
+                      <i class="fas fa-history me-1"></i>
+                      بازگردانی (Revert)
+                    </button>
+                  </form>
+                  <form method="POST" action="{{ url_for('delete_snapshot_action', server_id=server.id, snap_id=snap.id) }}" class="d-inline" onsubmit="return confirm('آیا از حذف این اسنپ‌شات مطمئنید؟')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill">
+                      <i class="fas fa-trash me-1"></i>
+                      حذف
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                هیچ اسنپ‌شاتی برای این سرور ثبت نشده است.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

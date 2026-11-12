@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import ipaddress
 import json
 import logging
 import os
@@ -158,6 +159,21 @@ def init_db():
         )"""
     )
     c.execute(
+        """CREATE TABLE IF NOT EXISTS ip_pool (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT UNIQUE,
+            netmask TEXT DEFAULT '24',
+            gateway TEXT,
+            ipv6 TEXT DEFAULT NULL,
+            ipv6_gateway TEXT DEFAULT NULL,
+            mac_address TEXT DEFAULT NULL,
+            is_allocated INTEGER DEFAULT 0,
+            server_id INTEGER DEFAULT NULL,
+            notes TEXT DEFAULT NULL,
+            created_at TEXT
+        )"""
+    )
+    c.execute(
         """CREATE TABLE IF NOT EXISTS servers (
             id INTEGER PRIMARY KEY,
             name TEXT,
@@ -226,7 +242,6 @@ def init_db():
         )"""
     )
 
-    # Ensure dynamic columns exist for existing databases
     c.execute("PRAGMA table_info(servers)")
     cols = [info[1] for info in c.fetchall()]
     needed_cols = [
@@ -487,11 +502,11 @@ def dashboard():
     c = conn.cursor()
     if session["role"] in ["admin", "owner"]:
         c.execute(
-            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended FROM servers WHERE active=1 ORDER BY name ASC"
+            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid FROM servers WHERE active=1 ORDER BY name ASC"
         )
     else:
         c.execute(
-            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended FROM servers s "
+            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid FROM servers s "
             "JOIN user_servers us ON s.id = us.server_id "
             "WHERE us.user_id=? AND s.active=1 ORDER BY s.name ASC",
             (session["user_id"],),
@@ -525,6 +540,10 @@ def admin_dashboard():
     total_users = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM users WHERE active=1")
     active_users = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM ip_pool WHERE is_allocated=0")
+    free_ips = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM ip_pool")
+    total_ips = c.fetchone()[0] or 0
     conn.close()
 
     return render_template(
@@ -535,7 +554,111 @@ def admin_dashboard():
         active_servers=active_servers,
         total_users=total_users,
         active_users=active_users,
+        free_ips=free_ips,
+        total_ips=total_ips,
     )
+
+
+# --- IP Pool Management ---
+@app.route("/ip_pool", methods=["GET", "POST"])
+@admin_required
+def ip_pool_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    error_msg = None
+
+    if request.method == "POST":
+        mode = request.form.get("mode", "single")
+        netmask = request.form.get("netmask", "24").strip().lstrip("/")
+        gateway = request.form.get("gateway", "").strip()
+        ipv6 = request.form.get("ipv6", "").strip() or None
+        ipv6_gateway = request.form.get("ipv6_gateway", "").strip() or None
+        mac_address = request.form.get("mac_address", "").strip() or None
+        notes = request.form.get("notes", "").strip() or None
+        now_iso = datetime.datetime.utcnow().isoformat()
+
+        if mode == "single":
+            ip_addr = request.form.get("ip_address", "").strip()
+            if ip_addr and gateway:
+                try:
+                    c.execute(
+                        """INSERT INTO ip_pool (ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address, is_allocated, notes, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                        (ip_addr, netmask, gateway, ipv6, ipv6_gateway, mac_address, notes, now_iso),
+                    )
+                    conn.commit()
+                except sqlite3.IntegrityError:
+                    error_msg = f"آی‌پی {ip_addr} قبلاً در بانک ثبت شده است."
+        elif mode == "range":
+            start_ip_str = request.form.get("start_ip", "").strip()
+            end_ip_str = request.form.get("end_ip", "").strip()
+            try:
+                start_ip = ipaddress.IPv4Address(start_ip_str)
+                end_ip = ipaddress.IPv4Address(end_ip_str)
+                if int(end_ip) < int(start_ip) or (int(end_ip) - int(start_ip)) > 1024:
+                    error_msg = "بازه آی‌پی نامعتبر است یا بیش از ۱۰۲۴ آی‌پی دارد."
+                else:
+                    for ip_int in range(int(start_ip), int(end_ip) + 1):
+                        ip_s = str(ipaddress.IPv4Address(ip_int))
+                        c.execute(
+                            """INSERT OR IGNORE INTO ip_pool (ip_address, netmask, gateway, ipv6_gateway, is_allocated, notes, created_at)
+                               VALUES (?, ?, ?, ?, 0, ?, ?)""",
+                            (ip_s, netmask, gateway, ipv6_gateway, notes, now_iso),
+                        )
+                    conn.commit()
+            except ValueError:
+                error_msg = "فرمت آی‌پی شروع یا پایان صحیح نیست."
+
+        if not error_msg:
+            conn.close()
+            return redirect(url_for("ip_pool_page"))
+
+    c.execute(
+        """SELECT p.id, p.ip_address, p.netmask, p.gateway, p.ipv6, p.ipv6_gateway, p.mac_address,
+                  p.is_allocated, p.server_id, p.notes, s.name
+           FROM ip_pool p LEFT JOIN servers s ON p.server_id = s.id
+           ORDER BY p.is_allocated ASC, p.id DESC"""
+    )
+    ips = [
+        {
+            "id": r[0],
+            "ip_address": r[1],
+            "netmask": r[2],
+            "gateway": r[3],
+            "ipv6": r[4],
+            "ipv6_gateway": r[5],
+            "mac_address": r[6],
+            "is_allocated": bool(r[7]),
+            "server_id": r[8],
+            "notes": r[9],
+            "server_name": r[10],
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template("ip_pool.html", ips=ips, error_msg=error_msg)
+
+
+@app.route("/ip_pool/release/<int:ip_id>")
+@admin_required
+def release_ip_pool(ip_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE id=?", (ip_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("ip_pool_page"))
+
+
+@app.route("/ip_pool/delete/<int:ip_id>")
+@admin_required
+def delete_ip_pool(ip_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM ip_pool WHERE id=?", (ip_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("ip_pool_page"))
 
 
 # --- ESXi Hosts Management ---
@@ -562,6 +685,7 @@ def esxi_hosts_page():
                 (name, ip, port, username, password, datastore, network, template_vmdk, now_iso),
             )
             conn.commit()
+            conn.close()
             return redirect(url_for("esxi_hosts_page"))
 
     c.execute("SELECT id, name, ip, port, username, default_datastore, default_network, template_vmdk FROM esxi_hosts ORDER BY id DESC")
@@ -608,7 +732,7 @@ def delete_esxi_host(host_id):
     return redirect(url_for("esxi_hosts_page"))
 
 
-# --- Automatic VM Creation on ESXi ---
+# --- Automatic VM Creation on ESXi with IP Pool & Cloud-Init ---
 @app.route("/create_vm", methods=["GET", "POST"])
 @admin_required
 def create_vm_page():
@@ -623,9 +747,10 @@ def create_vm_page():
         cpus = int(request.form.get("cpus", 2) or 2)
         ram_mb = int(request.form.get("ram_mb", 2048) or 2048)
         disk_gb = int(request.form.get("disk_gb", 30) or 30)
-        mac_address = request.form.get("mac_address", "").strip()
 
-        # Network parameters
+        ip_pool_choice = request.form.get("ip_pool_id", "manual").strip()
+        selected_pool_id = None
+        mac_address = request.form.get("mac_address", "").strip()
         primary_ip = request.form.get("primary_ip", "").strip()
         netmask = request.form.get("netmask", "25").strip()
         gateway = request.form.get("gateway", "").strip()
@@ -633,20 +758,65 @@ def create_vm_page():
         ipv6_gateway = request.form.get("ipv6_gateway", "").strip()
         extra_ips = request.form.get("extra_ips", "").strip()
 
-        # Credentials & traffic
+        if ip_pool_choice == "auto":
+            c.execute(
+                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+            )
+            pool_row = c.fetchone()
+            if not pool_row:
+                conn.close()
+                return "هیچ آی‌پی آزادی در بانک آی‌پی وجود ندارد!", 400
+            selected_pool_id, primary_ip, netmask, gateway, p_v6, p_v6gw, p_mac = pool_row
+            ipv6 = ipv6 or (p_v6 or "")
+            ipv6_gateway = ipv6_gateway or (p_v6gw or "")
+            mac_address = mac_address or (p_mac or "")
+        elif ip_pool_choice != "manual" and ip_pool_choice.isdigit():
+            c.execute(
+                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE id=? AND is_allocated=0",
+                (int(ip_pool_choice),),
+            )
+            pool_row = c.fetchone()
+            if not pool_row:
+                conn.close()
+                return "آی‌پی انتخاب‌شده در دسترس نیست!", 400
+            selected_pool_id, primary_ip, netmask, gateway, p_v6, p_v6gw, p_mac = pool_row
+            ipv6 = ipv6 or (p_v6 or "")
+            ipv6_gateway = ipv6_gateway or (p_v6gw or "")
+            mac_address = mac_address or (p_mac or "")
+
+        if not primary_ip or not gateway:
+            conn.close()
+            return "آدرس IP و Gateway الزامی است.", 400
+
         ssh_user = request.form.get("username", "root").strip()
         ssh_password = request.form.get("password", "").strip()
         traffic_limit = float(request.form.get("traffic_limit", 1000) or 1000)
         user_id = request.form.get("user_id")
 
-        # 1. Fetch ESXi host credentials
         c.execute("SELECT ip, port, username, password FROM esxi_hosts WHERE id=?", (esxi_host_id,))
         esxi_row = c.fetchone()
         if not esxi_row:
             conn.close()
             return "ESXi Host not found", 404
 
-        # 2. Deploy VM on ESXi via SSH
+        # Build Netplan & Cloud-Init seed.iso for automatic IP + password injection on first boot
+        extra_list = [x.strip() for x in re.split(r"[,\n]", extra_ips) if x.strip()]
+        netplan_yaml = esxi_manager.generate_netplan_yaml(
+            primary_ipv4=primary_ip,
+            gateway_ipv4=gateway,
+            netmask_or_prefix=netmask,
+            extra_ips=extra_list,
+            ipv6=ipv6,
+            ipv6_gateway=ipv6_gateway,
+        )
+        meta_data, user_data, net_cfg = esxi_manager.generate_cloud_init_configs(
+            vm_name=vm_name,
+            ssh_user=ssh_user,
+            ssh_password=ssh_password,
+            netplan_yaml=netplan_yaml,
+        )
+        seed_iso_bytes = esxi_manager.build_cloud_init_iso(meta_data, user_data, net_cfg)
+
         success, vmid, message = esxi_manager.create_vm_on_esxi(
             esxi_host=esxi_row[0],
             esxi_port=esxi_row[1],
@@ -660,6 +830,7 @@ def create_vm_page():
             template_vmdk=template_vmdk,
             network_name=network_name,
             mac_address=mac_address,
+            seed_iso_bytes=seed_iso_bytes,
         )
 
         if not success:
@@ -668,7 +839,6 @@ def create_vm_page():
 
         now_iso = datetime.datetime.utcnow().isoformat()
 
-        # 3. Save server record
         c.execute(
             """INSERT INTO servers (
                 name, ip, username, password, traffic_limit, active, traffic_usage,
@@ -695,13 +865,15 @@ def create_vm_page():
         )
         server_id = c.lastrowid
 
-        # 4. Assign server to user if selected
+        if selected_pool_id:
+            c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, selected_pool_id))
+
         if user_id:
             c.execute("INSERT OR IGNORE INTO user_servers (user_id, server_id) VALUES (?, ?)", (user_id, server_id))
 
         c.execute(
             "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
-            (server_id, f"سرور مجازی {vm_name} با موفقیت در ESXi ایجاد و روشن شد.", now_iso),
+            (server_id, f"سرور مجازی {vm_name} با IP {primary_ip} از طریق Cloud-Init ایجاد شد.", now_iso),
         )
         conn.commit()
         conn.close()
@@ -722,18 +894,32 @@ def create_vm_page():
     ]
     c.execute("SELECT id, username FROM users WHERE active=1 AND username != 'marmmr'")
     users = c.fetchall()
+    c.execute("SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC")
+    free_ips = [
+        {
+            "id": r[0],
+            "ip_address": r[1],
+            "netmask": r[2],
+            "gateway": r[3],
+            "ipv6": r[4] or "",
+            "ipv6_gateway": r[5] or "",
+            "mac_address": r[6] or "",
+        }
+        for r in c.fetchall()
+    ]
     conn.close()
-    return render_template("create_vm.html", esxi_hosts=hosts, users=users)
+    return render_template("create_vm.html", esxi_hosts=hosts, users=users, free_ips=free_ips)
 
 
-# --- Rebuild Server on ESXi ---
+# --- Rebuild Server on ESXi (with Cloud-Init IP Re-injection) ---
 @app.route("/server/<int:server_id>/rebuild", methods=["GET", "POST"])
 @admin_required
 def rebuild_vm_action(server_id):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        """SELECT s.vm_name, s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password, h.default_datastore, h.template_vmdk
+        """SELECT s.vm_name, s.vmid, s.esxi_host_id, s.ip, s.netmask, s.gateway, s.ipv6, s.ipv6_gateway, s.extra_ips,
+                  s.username, s.password, h.ip, h.port, h.username, h.password, h.default_datastore, h.template_vmdk
            FROM servers s JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
         (server_id,),
     )
@@ -742,7 +928,45 @@ def rebuild_vm_action(server_id):
         conn.close()
         return "سرور مربوطه در ESXi پیکربندی نشده است.", 400
 
-    vm_name, vmid, _, esxi_ip, esxi_port, esxi_user, esxi_pass, datastore, template = row
+    (
+        vm_name,
+        vmid,
+        _,
+        srv_ip,
+        netmask,
+        gateway,
+        ipv6,
+        ipv6_gw,
+        extra_ips,
+        ssh_user,
+        ssh_pass,
+        esxi_ip,
+        esxi_port,
+        esxi_user,
+        esxi_pass,
+        datastore,
+        template,
+    ) = row
+
+    seed_iso_bytes = None
+    if srv_ip and gateway:
+        extra_list = [x.strip() for x in re.split(r"[,\n]", extra_ips or "") if x.strip()]
+        netplan_yaml = esxi_manager.generate_netplan_yaml(
+            primary_ipv4=srv_ip,
+            gateway_ipv4=gateway,
+            netmask_or_prefix=netmask or "24",
+            extra_ips=extra_list,
+            ipv6=ipv6,
+            ipv6_gateway=ipv6_gw,
+        )
+        meta_data, user_data, net_cfg = esxi_manager.generate_cloud_init_configs(
+            vm_name=vm_name,
+            ssh_user=ssh_user or "root",
+            ssh_password=ssh_pass or "",
+            netplan_yaml=netplan_yaml,
+        )
+        seed_iso_bytes = esxi_manager.build_cloud_init_iso(meta_data, user_data, net_cfg)
+
     success, msg = esxi_manager.rebuild_vm_on_esxi(
         esxi_host=esxi_ip,
         esxi_port=esxi_port,
@@ -752,13 +976,14 @@ def rebuild_vm_action(server_id):
         vm_name=vm_name,
         datastore=datastore,
         template_vmdk=template,
+        seed_iso_bytes=seed_iso_bytes,
     )
 
     now_iso = datetime.datetime.utcnow().isoformat()
     if success:
         c.execute(
             "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
-            (server_id, f"ماشین مجازی {vm_name} با موفقیت از تمپلیت ریبیلد شد.", now_iso),
+            (server_id, f"ماشین مجازی {vm_name} با موفقیت ریبیلد و با آی‌پی {srv_ip} پیکربندی شد.", now_iso),
         )
         c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
         conn.commit()
@@ -766,13 +991,109 @@ def rebuild_vm_action(server_id):
     return redirect(request.referrer or url_for("manage_servers"))
 
 
-# --- Change IP & Add Secondary IP ---
+# --- Snapshot Management ---
+@app.route("/server/<int:server_id>/snapshots", methods=["GET", "POST"])
+@login_required
+def snapshots_page(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.id, s.name, s.vmid, h.ip, h.port, h.username, h.password
+           FROM servers s JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if not row or not row[2]:
+        conn.close()
+        return "این سرور به هاست ESXi متصل نیست.", 400
+
+    srv_id, srv_name, vmid, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+
+    if request.method == "POST":
+        snap_name = request.form.get("name", "").strip()
+        snap_desc = request.form.get("description", "").strip()
+        if snap_name:
+            ok, msg = esxi_manager.create_snapshot(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, snap_name, snap_desc)
+            now_iso = datetime.datetime.utcnow().isoformat()
+            if ok:
+                c.execute(
+                    "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+                    (server_id, f"اسنپ‌شات '{snap_name}' برای سرور {srv_name} ایجاد شد.", now_iso),
+                )
+                conn.commit()
+        conn.close()
+        return redirect(url_for("snapshots_page", server_id=server_id))
+
+    ok, snaps, err_msg = esxi_manager.list_snapshots(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid)
+    conn.close()
+    return render_template(
+        "snapshots.html",
+        server={"id": srv_id, "name": srv_name, "vmid": vmid},
+        snapshots=snaps,
+        error_msg=None if ok else err_msg,
+    )
+
+
+@app.route("/server/<int:server_id>/snapshots/revert/<int:snap_id>", methods=["POST"])
+@login_required
+def revert_snapshot_action(server_id, snap_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.vmid, s.name, h.ip, h.port, h.username, h.password
+           FROM servers s JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row and row[0]:
+        vmid, srv_name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+        ok, _ = esxi_manager.revert_snapshot(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, snap_id)
+        if ok:
+            now_iso = datetime.datetime.utcnow().isoformat()
+            c.execute(
+                "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'warning', ?, ?)",
+                (server_id, f"سرور {srv_name} به اسنپ‌شات #{snap_id} بازگردانی شد.", now_iso),
+            )
+            conn.commit()
+    conn.close()
+    return redirect(url_for("snapshots_page", server_id=server_id))
+
+
+@app.route("/server/<int:server_id>/snapshots/delete/<int:snap_id>", methods=["POST"])
+@login_required
+def delete_snapshot_action(server_id, snap_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.vmid, s.name, h.ip, h.port, h.username, h.password
+           FROM servers s JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row and row[0]:
+        vmid, srv_name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+        esxi_manager.remove_snapshot(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, snap_id)
+    conn.close()
+    return redirect(url_for("snapshots_page", server_id=server_id))
+
+
+# --- Change IP & Add Secondary IP (supports IP Pool) ---
 @app.route("/server/<int:server_id>/change_ip", methods=["GET", "POST"])
 @admin_required
 def change_ip_page(server_id):
     conn = get_db_connection()
     c = conn.cursor()
     if request.method == "POST":
+        pool_choice = request.form.get("ip_pool_id", "manual").strip()
         primary_ip = request.form.get("primary_ip", "").strip()
         netmask = request.form.get("netmask", "25").strip()
         gateway = request.form.get("gateway", "").strip()
@@ -781,8 +1102,23 @@ def change_ip_page(server_id):
         extra_ips = request.form.get("extra_ips", "").strip()
         apply_remote = request.form.get("apply_remote") == "1"
 
-        c.execute("SELECT username, password FROM servers WHERE id=?", (server_id,))
+        c.execute("SELECT ip, username, password FROM servers WHERE id=?", (server_id,))
         srv_cred = c.fetchone()
+        old_ip = srv_cred[0] if srv_cred else primary_ip
+
+        if pool_choice != "manual" and pool_choice.isdigit():
+            c.execute(
+                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE id=? AND is_allocated=0",
+                (int(pool_choice),),
+            )
+            p_row = c.fetchone()
+            if p_row:
+                pool_id, primary_ip, netmask, gateway, p_v6, p_v6gw = p_row
+                ipv6 = ipv6 or (p_v6 or "")
+                ipv6_gateway = ipv6_gateway or (p_v6gw or "")
+                # Release old IP and allocate new IP in pool
+                c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE server_id=?", (server_id,))
+                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
 
         if apply_remote and srv_cred:
             extra_list = [x.strip() for x in re.split(r"[,\n]", extra_ips) if x.strip()]
@@ -794,8 +1130,8 @@ def change_ip_page(server_id):
                 ipv6=ipv6,
                 ipv6_gateway=ipv6_gateway,
             )
-            # Try to connect to VM and apply netplan
-            esxi_manager.apply_netplan_to_vm(primary_ip, srv_cred[0], srv_cred[1], netplan_yaml)
+            # Connect to current/old IP to push new Netplan config
+            esxi_manager.apply_netplan_to_vm(old_ip, srv_cred[1], srv_cred[2], netplan_yaml)
 
         c.execute(
             """UPDATE servers SET ip=?, netmask=?, gateway=?, ipv6=?, ipv6_gateway=?, extra_ips=? WHERE id=?""",
@@ -816,8 +1152,8 @@ def change_ip_page(server_id):
         (server_id,),
     )
     row = c.fetchone()
-    conn.close()
     if not row:
+        conn.close()
         return "Server not found", 404
     srv = {
         "id": row[0],
@@ -829,7 +1165,20 @@ def change_ip_page(server_id):
         "ipv6_gateway": row[6],
         "extra_ips": row[7],
     }
-    return render_template("change_ip.html", server=srv)
+    c.execute("SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC")
+    free_ips = [
+        {
+            "id": r[0],
+            "ip_address": r[1],
+            "netmask": r[2],
+            "gateway": r[3],
+            "ipv6": r[4] or "",
+            "ipv6_gateway": r[5] or "",
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template("change_ip.html", server=srv, free_ips=free_ips)
 
 
 # --- Toggle Network Suspension on ESXi ---
@@ -847,7 +1196,6 @@ def toggle_network_action(server_id):
     if row and row[0]:
         vmid, is_suspended, name, host_ip, host_port, host_user, host_pass = row
         new_state = not bool(is_suspended)
-        # connect=True when unsuspend (was suspended)
         connect = bool(is_suspended)
         esxi_manager.set_vnic_connection(host_ip, host_port, host_user, host_pass, vmid, connected=connect)
         c.execute("UPDATE servers SET is_suspended=? WHERE id=?", (1 if new_state else 0, server_id))
@@ -877,7 +1225,6 @@ def recharge_traffic_action(server_id):
         new_limit = (curr_limit or 0.0) + add_amount
         c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
 
-        # If network was suspended, automatically restore it on ESXi
         if is_suspended and vmid and esxi_ip:
             esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True)
             c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
@@ -1039,7 +1386,6 @@ def update_server_limit(server_id):
     row = c.fetchone()
     c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
 
-    # If limit is increased above usage and server was suspended, automatically unsuspend!
     if row:
         usage, is_suspended, vmid, esxi_ip, esxi_port, esxi_user, esxi_pass = row
         if is_suspended and new_limit > (usage or 0.0) and vmid and esxi_ip:
@@ -1084,7 +1430,6 @@ def reset_traffic(server_id):
             (reset_date, datetime.datetime.utcnow().isoformat(), server_id),
         )
 
-        # Unsuspend network on ESXi if suspended
         if is_suspended and vmid and esxi_ip:
             esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True)
             c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
@@ -1144,7 +1489,6 @@ def toggle_server(server_id):
         c.execute("UPDATE servers SET active=? WHERE id=?", (new_status, server_id))
         conn.commit()
 
-        # If on ESXi, also send power command
         if row[1] and row[2]:
             c.execute("SELECT ip, port, username, password FROM esxi_hosts WHERE id=?", (row[2],))
             h = c.fetchone()
@@ -1725,7 +2069,6 @@ async def send_telegram_message(bot, chat_id, message):
 
 
 def monitor_servers(application):
-    alerted_servers = set()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     while True:
@@ -1784,7 +2127,6 @@ def monitor_servers(application):
                 )
                 conn.commit()
 
-                # بررسی اتمام ترافیک و ساسپند سخت‌افزاری شبکه در ESXi
                 if traffic_limit > 0 and traffic_usage_new > traffic_limit:
                     if esxi_host_id and vmid and not is_suspended and esxi_ip:
                         esxi_manager.set_vnic_connection(
@@ -1802,10 +2144,8 @@ def monitor_servers(application):
                             loop.run_until_complete(send_telegram_message(application.bot, telegram_chat_id, msg))
                         loop.run_until_complete(send_telegram_message(application.bot, ADMIN_CHAT_ID, msg))
                     elif not is_suspended:
-                        # Fallback to guest shutdown if not an ESXi VM
                         ssh.exec_command("sudo shutdown -h now")
 
-                # بازگردانی خودکار شبکه در صورت شارژ شدن ترافیک
                 elif is_suspended and traffic_usage_new <= traffic_limit and esxi_host_id and vmid and esxi_ip:
                     esxi_manager.set_vnic_connection(
                         esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True

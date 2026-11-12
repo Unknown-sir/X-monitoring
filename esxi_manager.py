@@ -1,6 +1,8 @@
-import io
 import logging
+import math
 import re
+import shlex
+import struct
 import time
 from typing import Any, Dict, List, Optional, Tuple
 import paramiko
@@ -35,7 +37,6 @@ def get_datastores(host: str, port: int, user: str, password: str) -> List[str]:
         ssh.close()
         for line in lines:
             name = line.strip()
-            # Exclude UUID symlinks and system folders
             if name and not re.match(r"^[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$", name):
                 datastores.append(name)
     except Exception as e:
@@ -46,7 +47,7 @@ def get_datastores(host: str, port: int, user: str, password: str) -> List[str]:
 def get_vm_id_by_name(ssh: paramiko.SSHClient, vm_name: str) -> Optional[int]:
     _, stdout, _ = ssh.exec_command("vim-cmd vmsvc/getallvms")
     lines = stdout.read().decode().splitlines()
-    for line in lines[1:]:  # skip header
+    for line in lines[1:]:
         parts = line.split()
         if len(parts) >= 2 and parts[1] == vm_name and parts[0].isdigit():
             return int(parts[0])
@@ -58,7 +59,6 @@ def get_vnic_device_id(ssh: paramiko.SSHClient, vmid: int) -> int:
     try:
         _, stdout, _ = ssh.exec_command(f"vim-cmd vmsvc/device.getdevices {vmid}")
         output = stdout.read().decode()
-        # Look for VirtualEthernetCard and its key
         match = re.search(r"\(vim\.vm\.device\.VirtualEthernetCard\)\s*\{.*?key\s*=\s*(\d+)", output, re.DOTALL)
         if match:
             return int(match.group(1))
@@ -113,6 +113,169 @@ def power_vm(esxi_host: str, port: int, user: str, password: str, vmid: int, act
         return False, str(e)
 
 
+# ==============================================================================
+# Pure-Python Cloud-Init NoCloud (seed.iso) Generator
+# ==============================================================================
+def _both16(val: int) -> bytes:
+    return struct.pack("<H", val) + struct.pack(">H", val)
+
+
+def _both32(val: int) -> bytes:
+    return struct.pack("<I", val) + struct.pack(">I", val)
+
+
+def _dir_record(extent_lba: int, data_len: int, flags: int, name_bytes: bytes) -> bytes:
+    rec_len = 33 + len(name_bytes)
+    if rec_len % 2 == 1:
+        pad = b"\x00"
+        rec_len += 1
+    else:
+        pad = b""
+    date_bytes = bytes([126, 1, 1, 0, 0, 0, 0])
+    rec = bytearray()
+    rec.append(rec_len)
+    rec.append(0)
+    rec += _both32(extent_lba)
+    rec += _both32(data_len)
+    rec += date_bytes
+    rec.append(flags)
+    rec.append(0)
+    rec.append(0)
+    rec += _both16(1)
+    rec.append(len(name_bytes))
+    rec += name_bytes
+    rec += pad
+    return bytes(rec)
+
+
+def build_cloud_init_iso(meta_data: str, user_data: str, network_config: str) -> bytes:
+    """
+    Pure-Python ISO9660 + Joliet generator with volume label 'CIDATA'
+    for cloud-init NoCloud datasource. Zero external dependencies.
+    """
+    files = [
+        ("meta-data", "METADATA.;1", meta_data.encode("utf-8")),
+        ("network-config", "NETCFG.;1", network_config.encode("utf-8")),
+        ("user-data", "USERDATA.;1", user_data.encode("utf-8")),
+    ]
+    sector_size = 2048
+    curr_lba = 25
+    file_extents = []
+    for joliet_name, iso_name, content in files:
+        sectors_needed = max(1, math.ceil(len(content) / sector_size))
+        file_extents.append((joliet_name, iso_name, content, curr_lba, sectors_needed))
+        curr_lba += sectors_needed
+    total_sectors = curr_lba
+
+    def make_root_dir(use_joliet: bool) -> bytes:
+        dir_lba = 24 if use_joliet else 23
+        entries = bytearray()
+        for name_b in (b"\x00", b"\x01"):
+            entries += _dir_record(dir_lba, sector_size, 2, name_b)
+        for joliet_name, iso_name, content, lba, _ in file_extents:
+            nb = joliet_name.encode("utf-16be") if use_joliet else iso_name.encode("ascii")
+            entries += _dir_record(lba, len(content), 0, nb)
+        return bytes(entries).ljust(sector_size, b"\x00")
+
+    pvd_root = make_root_dir(False)
+    svd_root = make_root_dir(True)
+
+    def make_path_table(big_endian: bool, root_lba: int) -> bytes:
+        endian = ">" if big_endian else "<"
+        pt = struct.pack(f"{endian}BBIHB", 1, 0, root_lba, 1, 0) + b"\x00"
+        return pt.ljust(sector_size, b"\x00")
+
+    pvd_pt_l = make_path_table(False, 23)
+    pvd_pt_m = make_path_table(True, 23)
+    svd_pt_l = make_path_table(False, 24)
+    svd_pt_m = make_path_table(True, 24)
+
+    def make_vd(is_joliet: bool) -> bytes:
+        vd = bytearray(sector_size)
+        vd[0] = 2 if is_joliet else 1
+        vd[1:6] = b"CD001"
+        vd[6] = 1
+        if is_joliet:
+            vd[8:40] = (" " * 16).encode("utf-16be")
+            vol_id = "CIDATA".encode("utf-16be")
+            vd[40:72] = vol_id + (b"\x00\x20" * (16 - len("CIDATA")))
+            vd[88:91] = b"%/E"
+        else:
+            vd[8:40] = b" " * 32
+            vd[40:72] = b"CIDATA".ljust(32, b" ")
+        vd[80:88] = _both32(total_sectors)
+        vd[120:124] = _both16(1)
+        vd[124:128] = _both16(1)
+        vd[128:132] = _both16(sector_size)
+        vd[132:140] = _both32(10)
+        vd[140:144] = struct.pack("<I", 21 if is_joliet else 19)
+        vd[148:152] = struct.pack(">I", 22 if is_joliet else 20)
+        root_rec = _dir_record(24 if is_joliet else 23, sector_size, 2, b"\x00")
+        vd[156 : 156 + len(root_rec)] = root_rec
+        vd[881] = 1
+        return bytes(vd)
+
+    pvd = make_vd(False)
+    svd = make_vd(True)
+    vdst = bytearray(sector_size)
+    vdst[0] = 255
+    vdst[1:6] = b"CD001"
+    vdst[6] = 1
+
+    iso = bytearray(16 * sector_size)
+    iso += pvd + svd + bytes(vdst)
+    iso += pvd_pt_l + pvd_pt_m + svd_pt_l + svd_pt_m
+    iso += pvd_root + svd_root
+    for _, _, content, _, sectors_needed in file_extents:
+        iso += content.ljust(sectors_needed * sector_size, b"\x00")
+    return bytes(iso)
+
+
+def generate_cloud_init_configs(
+    vm_name: str,
+    ssh_user: str,
+    ssh_password: str,
+    netplan_yaml: str,
+) -> Tuple[str, str, str]:
+    """Builds meta-data, user-data, and network-config for cloud-init."""
+    instance_id = f"{vm_name}-{int(time.time())}"
+    meta_data = f"instance-id: {instance_id}\nlocal-hostname: {vm_name}\n"
+
+    # Configure user password, root SSH login & password auth
+    if ssh_user == "root":
+        user_block = ""
+        chpasswd_list = f"    - root:{ssh_password}"
+    else:
+        user_block = (
+            "users:\n"
+            f"  - name: {ssh_user}\n"
+            "    sudo: ALL=(ALL) NOPASSWD:ALL\n"
+            "    shell: /bin/bash\n"
+            "    lock_passwd: false\n"
+        )
+        chpasswd_list = f"    - {ssh_user}:{ssh_password}\n    - root:{ssh_password}"
+
+    user_data = (
+        "#cloud-config\n"
+        "disable_root: false\n"
+        "ssh_pwauth: true\n"
+        f"{user_block}"
+        "chpasswd:\n"
+        "  expire: false\n"
+        "  list: |\n"
+        f"{chpasswd_list}\n"
+        "runcmd:\n"
+        "  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config\n"
+        "  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\n"
+        "  - systemctl restart ssh || systemctl restart sshd\n"
+        "  - netplan apply\n"
+    )
+    return meta_data, user_data, netplan_yaml
+
+
+# ==============================================================================
+# Netplan Generator & Remote Applier
+# ==============================================================================
 def generate_netplan_yaml(
     primary_ipv4: str,
     gateway_ipv4: str,
@@ -123,23 +286,17 @@ def generate_netplan_yaml(
     nameservers: Optional[List[str]] = None,
     iface: str = "eth0",
 ) -> str:
-    """Generates clean Ubuntu Netplan v2 YAML exactly matching user specification."""
+    """Generates clean Ubuntu Netplan v2 YAML."""
     clean_ip = primary_ipv4.strip()
     prefix = str(netmask_or_prefix).strip().lstrip("/")
-    if "/" not in clean_ip:
-        primary_addr = f"{clean_ip}/{prefix}"
-    else:
-        primary_addr = clean_ip
+    primary_addr = clean_ip if "/" in clean_ip else f"{clean_ip}/{prefix}"
 
     addresses = [primary_addr]
     if extra_ips:
         for eip in extra_ips:
             eip = eip.strip()
             if eip:
-                if "/" not in eip:
-                    addresses.append(f"{eip}/{prefix}")
-                else:
-                    addresses.append(eip)
+                addresses.append(eip if "/" in eip else f"{eip}/{prefix}")
 
     if ipv6 and ipv6.strip():
         addresses.append(ipv6.strip())
@@ -189,20 +346,19 @@ def apply_netplan_to_vm(
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(vm_ip, port=ssh_port, username=ssh_user, password=ssh_password, timeout=timeout)
 
-        # Write to temporary file then move with sudo
         sftp = ssh.open_sftp()
         with sftp.file("/tmp/01-netcfg.yaml", "w") as f:
             f.write(netplan_content)
         sftp.close()
 
-        # Apply netplan
+        quoted_pw = shlex.quote(ssh_password)
         cmd = (
-            "echo " + ssh_password + " | sudo -S mv /tmp/01-netcfg.yaml /etc/netplan/01-netcfg.yaml && "
+            f"echo {quoted_pw} | sudo -S mv /tmp/01-netcfg.yaml /etc/netplan/01-netcfg.yaml && "
             "sudo chmod 600 /etc/netplan/01-netcfg.yaml && "
             "sudo netplan apply"
         )
         _, stdout, stderr = ssh.exec_command(cmd)
-        out = stdout.read().decode().strip()
+        stdout.read()
         err = stderr.read().decode().strip()
         ssh.close()
         if "error" in err.lower():
@@ -212,6 +368,9 @@ def apply_netplan_to_vm(
         return False, str(e)
 
 
+# ==============================================================================
+# ESXi VM Creation & Rebuild (with Cloud-Init seed.iso)
+# ==============================================================================
 def create_vm_on_esxi(
     esxi_host: str,
     esxi_port: int,
@@ -225,45 +384,50 @@ def create_vm_on_esxi(
     template_vmdk: str,
     network_name: str = "VM Network",
     mac_address: Optional[str] = None,
+    seed_iso_bytes: Optional[bytes] = None,
 ) -> Tuple[bool, Optional[int], str]:
     """
-    Creates a new VM on ESXi by:
-    1. Creating the VM directory on datastore.
-    2. Cloning the Golden Image template VMDK with thin provisioning.
-    3. Expanding disk if requested size is larger.
-    4. Generating the .vmx file and registering the VM.
-    5. Powering on the newly registered VM.
+    Creates a new VM on ESXi with optional cloud-init seed.iso attached on ide1:0.
     """
     clean_vm_name = re.sub(r"[^a-zA-Z0-9_-]", "_", vm_name.strip())
     vm_dir = f"/vmfs/volumes/{datastore}/{clean_vm_name}"
     vmx_path = f"{vm_dir}/{clean_vm_name}.vmx"
     vmdk_path = f"{vm_dir}/{clean_vm_name}.vmdk"
+    iso_path = f"{vm_dir}/seed.iso"
 
     try:
         ssh = get_ssh_client(esxi_host, esxi_port, esxi_user, esxi_password)
 
-        # 1. Create directory
         _, _, stderr = ssh.exec_command(f"mkdir -p '{vm_dir}'")
         err = stderr.read().decode().strip()
         if err:
             ssh.close()
             return False, None, f"Failed to create VM directory: {err}"
 
-        # 2. Clone VMDK thin provisioned
         clone_cmd = f"vmkfstools -i '{template_vmdk}' -d thin '{vmdk_path}'"
         _, stdout, stderr = ssh.exec_command(clone_cmd)
+        clone_out = stdout.read().decode()
         err = stderr.read().decode().strip()
-        if err and "Cloning done with exit code 0" not in stdout.read().decode():
+        if err and "Cloning done with exit code 0" not in clone_out:
             if "Destination disk format" not in err and "already exists" not in err:
                 ssh.close()
                 return False, None, f"Failed to clone VMDK: {err}"
 
-        # 3. Expand disk if larger
         if disk_gb and disk_gb > 0:
-            expand_cmd = f"vmkfstools -X {disk_gb}G '{vmdk_path}'"
-            ssh.exec_command(expand_cmd)
+            ssh.exec_command(f"vmkfstools -X {disk_gb}G '{vmdk_path}'")
 
-        # 4. Generate VMX content
+        sftp = ssh.open_sftp()
+        cdrom_block = ""
+        if seed_iso_bytes:
+            with sftp.file(iso_path, "wb") as f:
+                f.write(seed_iso_bytes)
+            cdrom_block = (
+                'ide1:0.present = "TRUE"\n'
+                'ide1:0.deviceType = "cdrom-image"\n'
+                'ide1:0.fileName = "seed.iso"\n'
+                'ide1:0.startConnected = "TRUE"\n'
+            )
+
         mac_config = 'ethernet0.addressType = "generated"'
         if mac_address and mac_address.strip():
             mac_config = f'ethernet0.addressType = "static"\nethernet0.address = "{mac_address.strip()}"'
@@ -282,7 +446,7 @@ scsi0.virtualDev = "lsilogic"
 scsi0:0.present = "TRUE"
 scsi0:0.fileName = "{clean_vm_name}.vmdk"
 scsi0:0.deviceType = "scsi-hardDisk"
-ethernet0.present = "TRUE"
+{cdrom_block}ethernet0.present = "TRUE"
 ethernet0.virtualDev = "vmxnet3"
 ethernet0.networkName = "{network_name}"
 {mac_config}
@@ -292,29 +456,20 @@ powerType.powerOff = "soft"
 powerType.reset = "soft"
 powerType.suspend = "soft"
 """
-        sftp = ssh.open_sftp()
         with sftp.file(vmx_path, "w") as f:
             f.write(vmx_content)
         sftp.close()
 
-        # 5. Register VM
         reg_cmd = f"vim-cmd solo/registervm '{vmx_path}'"
         _, stdout, stderr = ssh.exec_command(reg_cmd)
         reg_out = stdout.read().decode().strip()
         reg_err = stderr.read().decode().strip()
 
-        vmid = None
-        if reg_out.isdigit():
-            vmid = int(reg_out)
-        else:
-            # Look up vmid by name
-            vmid = get_vm_id_by_name(ssh, clean_vm_name)
-
+        vmid = int(reg_out) if reg_out.isdigit() else get_vm_id_by_name(ssh, clean_vm_name)
         if not vmid:
             ssh.close()
             return False, None, f"Failed to register VM: {reg_err or reg_out}"
 
-        # 6. Power on VM
         ssh.exec_command(f"vim-cmd vmsvc/power.on {vmid}")
         ssh.close()
         return True, vmid, f"VM {clean_vm_name} created and powered on with VMID {vmid}"
@@ -332,44 +487,130 @@ def rebuild_vm_on_esxi(
     datastore: str,
     template_vmdk: str,
     disk_gb: Optional[int] = None,
+    seed_iso_bytes: Optional[bytes] = None,
 ) -> Tuple[bool, str]:
-    """
-    Rebuilds an existing VM:
-    1. Powers off VM.
-    2. Deletes the OS disk.
-    3. Re-clones fresh golden image.
-    4. Powers on VM.
-    """
+    """Rebuilds an existing VM and refreshes cloud-init seed.iso if provided."""
     clean_vm_name = re.sub(r"[^a-zA-Z0-9_-]", "_", vm_name.strip())
     vm_dir = f"/vmfs/volumes/{datastore}/{clean_vm_name}"
     vmdk_path = f"{vm_dir}/{clean_vm_name}.vmdk"
+    iso_path = f"{vm_dir}/seed.iso"
 
     try:
         ssh = get_ssh_client(esxi_host, esxi_port, esxi_user, esxi_password)
 
-        # 1. Power off
         ssh.exec_command(f"vim-cmd vmsvc/power.off {vmid}")
         time.sleep(3)
 
-        # 2. Delete existing disk
         ssh.exec_command(f"vmkfstools -U '{vmdk_path}'")
         time.sleep(1)
 
-        # 3. Clone fresh disk
         clone_cmd = f"vmkfstools -i '{template_vmdk}' -d thin '{vmdk_path}'"
         _, stdout, stderr = ssh.exec_command(clone_cmd)
+        clone_out = stdout.read().decode()
         err = stderr.read().decode().strip()
-        if err and "Cloning done with exit code 0" not in stdout.read().decode():
+        if err and "Cloning done with exit code 0" not in clone_out:
             ssh.close()
             return False, f"Failed to re-clone VMDK: {err}"
 
-        # 4. Expand if needed
         if disk_gb and disk_gb > 0:
             ssh.exec_command(f"vmkfstools -X {disk_gb}G '{vmdk_path}'")
 
-        # 5. Power on
+        if seed_iso_bytes:
+            sftp = ssh.open_sftp()
+            with sftp.file(iso_path, "wb") as f:
+                f.write(seed_iso_bytes)
+            sftp.close()
+
         ssh.exec_command(f"vim-cmd vmsvc/power.on {vmid}")
         ssh.close()
         return True, f"VM {clean_vm_name} successfully rebuilt from template"
+    except Exception as e:
+        return False, str(e)
+
+
+# ==============================================================================
+# ESXi Snapshot Management
+# ==============================================================================
+def list_snapshots(esxi_host: str, port: int, user: str, password: str, vmid: int) -> Tuple[bool, List[Dict[str, Any]], str]:
+    """Parses `vim-cmd vmsvc/snapshot.get <vmid>` into a flat list of snapshots."""
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password)
+        _, stdout, stderr = ssh.exec_command(f"vim-cmd vmsvc/snapshot.get {vmid}")
+        output = stdout.read().decode()
+        err = stderr.read().decode().strip()
+        ssh.close()
+        if err and "Get Snapshot" not in output:
+            return False, [], err
+
+        snapshots: List[Dict[str, Any]] = []
+        current: Dict[str, Any] = {}
+        for raw_line in output.splitlines():
+            line = raw_line.strip().lstrip("|-")
+            if line.startswith("Snapshot Name"):
+                if current and "id" in current:
+                    snapshots.append(current)
+                current = {"name": line.split(":", 1)[1].strip()}
+            elif line.startswith("Snapshot Id") and current is not None:
+                val = line.split(":", 1)[1].strip()
+                current["id"] = int(val) if val.isdigit() else val
+            elif line.startswith("Snapshot Desciption") or line.startswith("Snapshot Description"):
+                current["description"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Snapshot Created On"):
+                current["created_on"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Snapshot State"):
+                current["state"] = line.split(":", 1)[1].strip()
+        if current and "id" in current:
+            snapshots.append(current)
+
+        return True, snapshots, "OK"
+    except Exception as e:
+        return False, [], str(e)
+
+
+def create_snapshot(
+    esxi_host: str, port: int, user: str, password: str, vmid: int, name: str, description: str = ""
+) -> Tuple[bool, str]:
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", name.strip()) or f"snap_{int(time.time())}"
+    safe_desc = description.replace('"', "'").strip()
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password)
+        cmd = f'vim-cmd vmsvc/snapshot.create {vmid} "{safe_name}" "{safe_desc}" 0 0'
+        _, stdout, stderr = ssh.exec_command(cmd)
+        out = stdout.read().decode().strip()
+        err = stderr.read().decode().strip()
+        ssh.close()
+        if err:
+            return False, err
+        return True, out or "Snapshot created"
+    except Exception as e:
+        return False, str(e)
+
+
+def revert_snapshot(esxi_host: str, port: int, user: str, password: str, vmid: int, snapshot_id: int) -> Tuple[bool, str]:
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password)
+        cmd = f"vim-cmd vmsvc/snapshot.revert {vmid} {int(snapshot_id)} 0"
+        _, stdout, stderr = ssh.exec_command(cmd)
+        out = stdout.read().decode().strip()
+        err = stderr.read().decode().strip()
+        ssh.close()
+        if err:
+            return False, err
+        return True, out or "Reverted to snapshot"
+    except Exception as e:
+        return False, str(e)
+
+
+def remove_snapshot(esxi_host: str, port: int, user: str, password: str, vmid: int, snapshot_id: int) -> Tuple[bool, str]:
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password)
+        cmd = f"vim-cmd vmsvc/snapshot.remove {vmid} {int(snapshot_id)}"
+        _, stdout, stderr = ssh.exec_command(cmd)
+        out = stdout.read().decode().strip()
+        err = stderr.read().decode().strip()
+        ssh.close()
+        if err:
+            return False, err
+        return True, out or "Snapshot removed"
     except Exception as e:
         return False, str(e)

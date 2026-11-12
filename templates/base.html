@@ -35,7 +35,7 @@
 
                         {% if session.get('role') in ['admin', 'owner'] %}
                             <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle{% if request.endpoint in ['admin_dashboard','manage_servers','manage_users','add_server_page','add_user_page','assign_server_page','esxi_hosts_page','create_vm_page'] %} active{% endif %}" href="#" id="adminMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <a class="nav-link dropdown-toggle{% if request.endpoint in ['admin_dashboard','manage_servers','manage_users','add_server_page','add_user_page','assign_server_page','esxi_hosts_page','create_vm_page','ip_pool_page'] %} active{% endif %}" href="#" id="adminMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                     <i class="fas fa-shield-halved me-1"></i>
                                     مدیریت
                                 </a>
@@ -44,6 +44,7 @@
                                     <li><a class="dropdown-item" href="{{ url_for('manage_servers') }}"><i class="fas fa-server me-2"></i>مدیریت سرورها</a></li>
                                     <li><a class="dropdown-item" href="{{ url_for('create_vm_page') }}"><i class="fas fa-plus-circle me-2 text-primary"></i>ساخت سرور در ESXi</a></li>
                                     <li><a class="dropdown-item" href="{{ url_for('esxi_hosts_page') }}"><i class="fas fa-network-wired me-2 text-info"></i>هاست‌های ESXi</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('ip_pool_page') }}"><i class="fas fa-sitemap me-2 text-success"></i>بانک آی‌پی (IP Pool)</a></li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li><a class="dropdown-item" href="{{ url_for('manage_users') }}"><i class="fas fa-users me-2"></i>مدیریت کاربران</a></li>
                                     <li><a class="dropdown-item" href="{{ url_for('assign_server_page') }}"><i class="fas fa-link me-2"></i>اتصال سرور به کاربر</a></li>

@@ -9,7 +9,7 @@
                 داشبورد
             </h1>
             <p class="text-muted mb-0 small">
-                وضعیت کلی سرورها، مصرف ترافیک و کنترل وضعیت پورت شبکه
+                وضعیت کلی سرورها، مصرف ترافیک، اسنپ‌شات‌ها و کنترل پورت شبکه
             </p>
         </div>
         <div class="license-pill d-flex flex-column flex-sm-row align-items-sm-center gap-2 px-3 py-2 rounded-3">
@@ -70,15 +70,21 @@
                 <div class="server-card-footer mt-2 d-flex flex-wrap gap-2 justify-content-between align-items-center">
                     <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-light rounded-pill">
                         <i class="fas fa-chart-line me-1"></i>
-                        مانیتور سرور
+                        مانیتور
                     </a>
 
-                    <!-- دکمه شارژ ترافیک و وصل آنی شبکه برای کاربر و ادمین -->
+                    {% if server|length > 7 and server[6] and server[7] %}
+                    <a href="{{ url_for('snapshots_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
+                        <i class="fas fa-camera me-1"></i>
+                        اسنپ‌شات‌ها
+                    </a>
+                    {% endif %}
+
                     <form method="POST" action="{{ url_for('recharge_traffic_action', server_id=server[0]) }}" class="d-inline">
                         <input type="hidden" name="add_amount" value="100">
                         <button type="submit" class="btn btn-sm btn-outline-warning rounded-pill">
                             <i class="fas fa-bolt me-1"></i>
-                            شارژ ترافیک (+100 GiB)
+                            شارژ (+100 GiB)
                         </button>
                     </form>
                 </div>
@@ -123,6 +129,10 @@
         <a href="{{ url_for('create_vm_page') }}" class="btn btn-primary">
             <i class="fas fa-plus-circle me-1"></i>
             ساخت سرور مجازی جدید
+        </a>
+        <a href="{{ url_for('ip_pool_page') }}" class="btn btn-outline-success">
+            <i class="fas fa-sitemap me-1"></i>
+            بانک آی‌پی
         </a>
         {% endif %}
         <a href="{{ url_for('logout') }}" class="btn btn-danger">

@@ -6,10 +6,10 @@
     <div>
       <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
         <i class="fas fa-microchip text-primary"></i>
-        ساخت خودکار سرور مجازی (Ubuntu on ESXi)
+        ساخت خودکار سرور مجازی (Ubuntu + Cloud-Init on ESXi)
       </h2>
       <p class="text-muted mb-0 small">
-        کلون سریع از تمپلیت مرجع، تنظیم مشخصات سخت‌افزاری و تولید خودکار پیکربندی Netplan
+        کلون سریع از تمپلیت مرجع، انتخاب آی‌پی از بانک آی‌پی و تزریق خودکار شبکه و رمز عبور با Cloud-Init در بوت اول
       </p>
     </div>
     <div>
@@ -88,38 +88,59 @@
             <input type="number" name="disk_gb" class="form-control form-control-sm" min="10" value="30" required>
           </div>
           <div class="col-md-3">
-            <label class="form-label small text-muted">مک آدرس اختصاصی کارت شبکه (اختیاری)</label>
-            <input type="text" name="mac_address" class="form-control form-control-sm" placeholder="مثلاً: 00:50:56:00:11:22">
+            <label class="form-label small text-muted">مک آدرس اختصاصی (اختیاری)</label>
+            <input type="text" name="mac_address" id="mac_input" class="form-control form-control-sm" placeholder="مثلاً: 00:50:56:00:11:22">
           </div>
         </div>
       </div>
 
-      <!-- بخش ۳: پیکربندی شبکه (Netplan اوبونتو) -->
+      <!-- بخش ۳: تخصیص از بانک آی‌پی و پیکربندی شبکه (Cloud-Init Netplan) -->
       <div class="col-12">
         <h5 class="text-white border-bottom border-secondary pb-2 mb-3">
           <i class="fas fa-network-wired text-primary me-2"></i>
-          ۳. پیکربندی شبکه (Netplan)
+          ۳. انتخاب از بانک آی‌پی و تزریق خودکار شبکه (Cloud-Init)
         </h5>
         <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label small text-info">انتخاب آی‌پی از بانک آی‌پی (IP Pool)</label>
+            <select name="ip_pool_id" id="ip_pool_select" class="form-select form-select-sm" onchange="onPoolSelect()">
+              <option value="manual">ورود دستی IP و Gateway</option>
+              {% if free_ips %}
+              <option value="auto" selected>⚡ تخصیص خودکار اولین آی‌پی آزاد ({{ free_ips[0].ip_address }}/{{ free_ips[0].netmask }})</option>
+              {% for fip in free_ips %}
+              <option value="{{ fip.id }}"
+                      data-ip="{{ fip.ip_address }}"
+                      data-netmask="{{ fip.netmask }}"
+                      data-gw="{{ fip.gateway }}"
+                      data-ipv6="{{ fip.ipv6 }}"
+                      data-ipv6gw="{{ fip.ipv6_gateway }}"
+                      data-mac="{{ fip.mac_address }}">
+                {{ fip.ip_address }}/{{ fip.netmask }} (GW: {{ fip.gateway }})
+              </option>
+              {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+
           <div class="col-md-4">
             <label class="form-label small text-muted">IP اصلی سرور (IPv4)</label>
-            <input type="text" name="primary_ip" class="form-control form-control-sm" placeholder="185.42.212.241" required>
+            <input type="text" name="primary_ip" id="primary_ip_input" class="form-control form-control-sm" placeholder="185.42.212.241" value="{{ free_ips[0].ip_address if free_ips else '' }}" required>
           </div>
           <div class="col-md-4">
             <label class="form-label small text-muted">نت‌ماسک / پیشوند (CIDR Prefix)</label>
-            <input type="text" name="netmask" class="form-control form-control-sm" placeholder="25 یا 255.255.255.128" value="25" required>
+            <input type="text" name="netmask" id="netmask_input" class="form-control form-control-sm" value="{{ free_ips[0].netmask if free_ips else '25' }}" required>
           </div>
           <div class="col-md-4">
             <label class="form-label small text-muted">Gateway اصلی (IPv4)</label>
-            <input type="text" name="gateway" class="form-control form-control-sm" placeholder="185.42.212.129" required>
+            <input type="text" name="gateway" id="gateway_input" class="form-control form-control-sm" placeholder="185.42.212.129" value="{{ free_ips[0].gateway if free_ips else '' }}" required>
           </div>
           <div class="col-md-6">
             <label class="form-label small text-muted">آدرس IPv6 (اختیاری)</label>
-            <input type="text" name="ipv6" class="form-control form-control-sm" placeholder="2a13:9540:0000:0034:0000:0000:29ec:b785/64">
+            <input type="text" name="ipv6" id="ipv6_input" class="form-control form-control-sm" value="{{ free_ips[0].ipv6 if free_ips else '' }}" placeholder="2a13:9540:0000:0034:0000:0000:29ec:b785/64">
           </div>
           <div class="col-md-6">
             <label class="form-label small text-muted">Gateway آدرس IPv6 (اختیاری)</label>
-            <input type="text" name="ipv6_gateway" class="form-control form-control-sm" placeholder="2a13:9540:0:34::1">
+            <input type="text" name="ipv6_gateway" id="ipv6_gw_input" class="form-control form-control-sm" value="{{ free_ips[0].ipv6_gateway if free_ips else '' }}" placeholder="2a13:9540:0:34::1">
           </div>
           <div class="col-md-12">
             <label class="form-label small text-muted">آی‌پی‌های اضافه (Extra IPs - اختیاری، با ویرگول یا خط بعد جدا کنید)</label>
@@ -140,7 +161,7 @@
             <input type="text" name="username" class="form-control form-control-sm" value="root" required>
           </div>
           <div class="col-md-3">
-            <label class="form-label small text-muted">رمز عبور SSH سرور</label>
+            <label class="form-label small text-muted">رمز عبور SSH سرور (تزریق با Cloud-Init)</label>
             <input type="password" name="password" class="form-control form-control-sm" placeholder="رمز عبور اوبونتو" required>
           </div>
           <div class="col-md-3">
@@ -162,7 +183,7 @@
       <div class="col-12 text-end mt-4">
         <button type="submit" class="btn btn-primary btn-lg rounded-pill px-5">
           <i class="fas fa-rocket me-2"></i>
-          ساخت و استقرار ماشین مجازی
+          ساخت ماشین مجازی و تزریق خودکار IP
         </button>
       </div>
     </div>
@@ -178,6 +199,29 @@ function updateHostDefaults() {
     document.getElementById('datastore_input').value = opt.getAttribute('data-datastore') || 'datastore1';
     document.getElementById('network_input').value = opt.getAttribute('data-network') || 'VM Network';
     document.getElementById('template_input').value = opt.getAttribute('data-template') || '';
+  }
+}
+
+function onPoolSelect() {
+  const sel = document.getElementById('ip_pool_select');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt) return;
+  if (sel.value === 'auto' && sel.options.length > 2) {
+    const firstPool = sel.options[2];
+    fillPoolFields(firstPool);
+  } else if (sel.value !== 'manual') {
+    fillPoolFields(opt);
+  }
+}
+
+function fillPoolFields(opt) {
+  document.getElementById('primary_ip_input').value = opt.getAttribute('data-ip') || '';
+  document.getElementById('netmask_input').value = opt.getAttribute('data-netmask') || '25';
+  document.getElementById('gateway_input').value = opt.getAttribute('data-gw') || '';
+  document.getElementById('ipv6_input').value = opt.getAttribute('data-ipv6') || '';
+  document.getElementById('ipv6_gw_input').value = opt.getAttribute('data-ipv6gw') || '';
+  if (opt.getAttribute('data-mac')) {
+    document.getElementById('mac_input').value = opt.getAttribute('data-mac');
   }
 }
 </script>

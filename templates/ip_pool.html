@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}بانک آی‌پی (IP Pool) | XMonitor{% endblock %}
+{% block content %}
+<div class="manage-section">
+  <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+      <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+        <i class="fas fa-sitemap text-primary"></i>
+        بانک آی‌پی‌ها (IP Pool)
+      </h2>
+      <p class="text-muted mb-0 small">
+        تعریف آی‌پی‌های آزاد و گیت‌وی آن‌ها برای تزریق خودکار هنگام ساخت سرور مجازی و تغییر آی‌پی
+      </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-primary rounded-pill">
+        <i class="fas fa-plus-circle me-1"></i>
+        ساخت سرور مجازی
+      </a>
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right-long me-1"></i>
+        پنل مدیریت
+      </a>
+    </div>
+  </div>
+
+  {% if error_msg %}
+  <div class="alert alert-danger">{{ error_msg }}</div>
+  {% endif %}
+
+  <div class="row g-4 mb-4">
+    <!-- افزودن تک آی‌پی -->
+    <div class="col-lg-6">
+      <div class="card border-0 glass-card h-100">
+        <div class="card-body">
+          <h5 class="text-white mb-3 d-flex align-items-center gap-2">
+            <i class="fas fa-plus text-success"></i>
+            افزودن تکی آی‌پی
+          </h5>
+          <form method="POST" action="{{ url_for('ip_pool_page') }}" class="row g-2">
+            <input type="hidden" name="mode" value="single">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">آدرس IPv4</label>
+              <input type="text" name="ip_address" class="form-control form-control-sm" placeholder="185.42.212.241" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted">نت‌ماسک (CIDR)</label>
+              <input type="text" name="netmask" class="form-control form-control-sm" value="25" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted">Gateway</label>
+              <input type="text" name="gateway" class="form-control form-control-sm" placeholder="185.42.212.129" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">IPv6 (اختیاری)</label>
+              <input type="text" name="ipv6" class="form-control form-control-sm" placeholder="2a13:9540:0:34::2/64">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">IPv6 Gateway (اختیاری)</label>
+              <input type="text" name="ipv6_gateway" class="form-control form-control-sm" placeholder="2a13:9540:0:34::1">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">MAC Address اختصاصی (اختیاری)</label>
+              <input type="text" name="mac_address" class="form-control form-control-sm" placeholder="00:50:56:00:11:22">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">یادداشت (اختیاری)</label>
+              <input type="text" name="notes" class="form-control form-control-sm" placeholder="مثلاً رنج ایران / هتزنر">
+            </div>
+            <div class="col-12 mt-2">
+              <button type="submit" class="btn btn-success btn-sm w-100 rounded-3">
+                <i class="fas fa-save me-1"></i>
+                ثبت آی‌پی در بانک
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- افزودن بازه آی‌پی (Range) -->
+    <div class="col-lg-6">
+      <div class="card border-0 glass-card h-100">
+        <div class="card-body">
+          <h5 class="text-white mb-3 d-flex align-items-center gap-2">
+            <i class="fas fa-layer-group text-info"></i>
+            افزودن گروهی / بازه‌ای (Range)
+          </h5>
+          <form method="POST" action="{{ url_for('ip_pool_page') }}" class="row g-2">
+            <input type="hidden" name="mode" value="range">
+            <div class="col-md-6">
+              <label class="form-label small text-muted">از IP (شروع)</label>
+              <input type="text" name="start_ip" class="form-control form-control-sm" placeholder="185.42.212.240" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">تا IP (پایان)</label>
+              <input type="text" name="end_ip" class="form-control form-control-sm" placeholder="185.42.212.250" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small text-muted">نت‌ماسک (CIDR)</label>
+              <input type="text" name="netmask" class="form-control form-control-sm" value="25" required>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label small text-muted">Gateway مشترک</label>
+              <input type="text" name="gateway" class="form-control form-control-sm" placeholder="185.42.212.129" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">IPv6 Gateway مشترک (اختیاری)</label>
+              <input type="text" name="ipv6_gateway" class="form-control form-control-sm" placeholder="2a13:9540:0:34::1">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted">یادداشت</label>
+              <input type="text" name="notes" class="form-control form-control-sm" placeholder="ساب‌نت سرورهای اوبونتو">
+            </div>
+            <div class="col-12 mt-2">
+              <button type="submit" class="btn btn-info btn-sm w-100 rounded-3 text-dark fw-semibold">
+                <i class="fas fa-plus-square me-1"></i>
+                ثبت گروهی بازه آی‌پی
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- لیست آی‌پی‌های بانک -->
+  <div class="card border-0">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark align-middle mb-0">
+          <thead class="small text-uppercase text-muted">
+            <tr>
+              <th>ID</th>
+              <th>آدرس IP</th>
+              <th>Gateway</th>
+              <th>IPv6 / GW</th>
+              <th>وضعیت</th>
+              <th>متصل به سرور</th>
+              <th>یادداشت</th>
+              <th class="text-end">عملیات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ip in ips %}
+            <tr>
+              <td class="small text-muted">{{ ip.id }}</td>
+              <td style="direction:ltr;" class="fw-semibold text-white">{{ ip.ip_address }}/{{ ip.netmask }}</td>
+              <td style="direction:ltr;" class="small text-muted">{{ ip.gateway }}</td>
+              <td style="direction:ltr;" class="small text-muted">
+                {{ ip.ipv6 or "-" }}
+                {% if ip.ipv6_gateway %}<br><small>GW: {{ ip.ipv6_gateway }}</small>{% endif %}
+              </td>
+              <td>
+                {% if ip.is_allocated %}
+                  <span class="badge bg-warning-subtle text-warning">تخصیص‌یافته</span>
+                {% else %}
+                  <span class="badge bg-success-subtle text-success">آزاد</span>
+                {% endif %}
+              </td>
+              <td class="small">{{ ip.server_name or "-" }}</td>
+              <td class="small text-muted">{{ ip.notes or "-" }}</td>
+              <td class="text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                  {% if ip.is_allocated %}
+                  <a href="{{ url_for('release_ip_pool', ip_id=ip.id) }}" class="btn btn-sm btn-outline-warning rounded-pill">
+                    <i class="fas fa-unlink me-1"></i>آزادسازی
+                  </a>
+                  {% endif %}
+                  <a href="{{ url_for('delete_ip_pool', ip_id=ip.id) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این آی‌پی مطمئنید؟')">
+                    <i class="fas fa-trash me-1"></i>حذف
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                بانک آی‌پی خالی است. از فرم‌های بالا آی‌پی یا بازه آی‌پی اضافه کنید.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

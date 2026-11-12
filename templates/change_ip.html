@@ -9,7 +9,7 @@
         مدیریت و تغییر آی‌پی سرور: {{ server.name }}
       </h2>
       <p class="text-muted mb-0 small">
-        تغییر آی‌پی اصلی، گیت‌وی، آی‌پی‌های اضافه و اعمال خودکار فایل Netplan روی اوبونتو
+        انتخاب از بانک آی‌پی یا ورود دستی، همراه با اعمال خودکار فایل Netplan روی اوبونتو
       </p>
     </div>
     <div class="d-flex flex-wrap gap-2">
@@ -24,6 +24,27 @@
     <div class="col-lg-7">
       <form method="POST" action="{{ url_for('change_ip_page', server_id=server.id) }}" class="card border-0 glass-card p-4">
         <div class="row g-3">
+          {% if free_ips %}
+          <div class="col-12">
+            <label class="form-label small text-info">جایگزینی از بانک آی‌پی (اختیاری)</label>
+            <select name="ip_pool_id" id="ip_pool_select" class="form-select form-select-sm" onchange="onChangePoolSelect()">
+              <option value="manual">حفظ / ویرایش دستی آی‌پی فعلی</option>
+              {% for fip in free_ips %}
+              <option value="{{ fip.id }}"
+                      data-ip="{{ fip.ip_address }}"
+                      data-netmask="{{ fip.netmask }}"
+                      data-gw="{{ fip.gateway }}"
+                      data-ipv6="{{ fip.ipv6 }}"
+                      data-ipv6gw="{{ fip.ipv6_gateway }}">
+                {{ fip.ip_address }}/{{ fip.netmask }} (GW: {{ fip.gateway }})
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% else %}
+          <input type="hidden" name="ip_pool_id" value="manual">
+          {% endif %}
+
           <div class="col-md-6">
             <label class="form-label small text-muted">آی‌پی اصلی سرور (Primary IPv4)</label>
             <input type="text" name="primary_ip" id="input_primary_ip" class="form-control" value="{{ server.ip }}" required oninput="renderPreview()">
@@ -80,6 +101,18 @@
 </div>
 
 <script>
+function onChangePoolSelect() {
+  const sel = document.getElementById('ip_pool_select');
+  if (!sel || sel.value === 'manual') return;
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('input_primary_ip').value = opt.getAttribute('data-ip') || '';
+  document.getElementById('input_netmask').value = opt.getAttribute('data-netmask') || '24';
+  document.getElementById('input_gateway').value = opt.getAttribute('data-gw') || '';
+  document.getElementById('input_ipv6').value = opt.getAttribute('data-ipv6') || '';
+  document.getElementById('input_ipv6_gw').value = opt.getAttribute('data-ipv6gw') || '';
+  renderPreview();
+}
+
 function renderPreview() {
   const ip = document.getElementById('input_primary_ip').value.trim();
   const netmask = document.getElementById('input_netmask').value.trim().replace('/', '');

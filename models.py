@@ -20,6 +20,21 @@ class EsxiHost(Base):
     servers: Mapped[list["Server"]] = relationship(back_populates="esxi_host")
 
 
+class IpPool(Base):
+    __tablename__ = "ip_pool"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ip_address: Mapped[str] = mapped_column(String(64), unique=True)
+    netmask: Mapped[str] = mapped_column(String(32), default="24")
+    gateway: Mapped[str] = mapped_column(String(64))
+    ipv6: Mapped[str] = mapped_column(String(128), nullable=True)
+    ipv6_gateway: Mapped[str] = mapped_column(String(128), nullable=True)
+    mac_address: Mapped[str] = mapped_column(String(32), nullable=True)
+    is_allocated: Mapped[bool] = mapped_column(Boolean, default=False)
+    server_id: Mapped[int] = mapped_column(Integer, ForeignKey("servers.id", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[str] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Server(Base):
     __tablename__ = "servers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
