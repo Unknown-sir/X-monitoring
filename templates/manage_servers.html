@@ -13,12 +13,7 @@
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
-            <div class="input-group input-group-sm" style="width: 220px;">
-                <span class="input-group-text bg-transparent text-muted" style="border-color: var(--border-subtle) !important;">
-                    <i class="fas fa-search"></i>
-                </span>
-                <input type="text" id="serverSearchInput" class="form-control" placeholder="جستجوی نام یا IP..." oninput="filterServersTable()">
-            </div>
+            <input type="text" id="serverSearchInput" class="form-control form-control-sm" style="width: 220px;" placeholder="🔍 جستجوی نام یا IP..." oninput="filterServersTable()">
             <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-primary rounded-pill px-3">
                 <i class="fas fa-plus-circle me-1"></i>
                 ساخت سرور در ESXi
@@ -72,7 +67,7 @@
                                 {% if session.get('role') == 'owner' %}
                                 <form method="POST" action="{{ url_for('update_server_limit', server_id=server[0]) }}" class="d-flex gap-1 mt-1">
                                     <input type="number" step="0.1" min="0" name="traffic_limit" value="{{ server[5] or '' }}" class="form-control form-control-sm py-0 px-2" style="max-width:75px;font-size:0.75rem;" placeholder="GiB">
-                                    <button type="submit" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size:0.72rem;">ثبت</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:0.72rem;">ثبت</button>
                                 </form>
                                 {% endif %}
                             </td>
@@ -92,37 +87,37 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-flex flex-wrap gap-1 justify-content-end">
-                                    <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill" title="مانیتور زنده">
-                                        <i class="fas fa-chart-line"></i>
+                                    <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill">
+                                        <i class="fas fa-chart-line"></i> مانیتور
                                     </a>
                                     <button type="button" class="btn btn-sm btn-outline-light rounded-pill"
                                             data-bs-toggle="modal" data-bs-target="#editServerModal"
-                                            onclick="openEditModal({{ server[0] }}, '{{ server[1]|e }}', '{{ server[2]|e }}', '{{ server[3]|e }}', '{{ server[5] or 0 }}', '{{ (server[6] or '')|e }}')"
-                                            title="ویرایش">
-                                        <i class="fas fa-pen"></i>
+                                            onclick="openEditModal({{ server[0] }}, '{{ server[1]|e }}', '{{ server[2]|e }}', '{{ server[3]|e }}', '{{ server[5] or 0 }}', '{{ (server[6] or '')|e }}')">
+                                        <i class="fas fa-pen"></i> ویرایش
                                     </button>
-                                    <a href="{{ url_for('change_ip_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill" title="تنظیمات آی‌پی">
-                                        <i class="fas fa-network-wired"></i>
+                                    <a href="{{ url_for('change_ip_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
+                                        <i class="fas fa-network-wired"></i> آی‌پی
                                     </a>
                                     {% if server[10] and server[11] %}
-                                    <a href="{{ url_for('snapshots_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill" title="اسنپ‌شات‌ها">
-                                        <i class="fas fa-camera"></i>
+                                    <a href="{{ url_for('snapshots_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill">
+                                        <i class="fas fa-camera"></i> اسنپ‌شات
                                     </a>
-                                    <a href="{{ url_for('toggle_network_action', server_id=server[0]) }}" class="btn btn-sm {% if server[12] %}btn-outline-success{% else %}btn-outline-warning{% endif %} rounded-pill" title="{% if server[12] %}آزادسازی پورت{% else %}ساسپند پورت{% endif %}">
+                                    <a href="{{ url_for('toggle_network_action', server_id=server[0]) }}" class="btn btn-sm {% if server[12] %}btn-outline-success{% else %}btn-outline-warning{% endif %} rounded-pill">
                                         <i class="fas {% if server[12] %}fa-unlock{% else %}fa-ban{% endif %}"></i>
+                                        {% if server[12] %}وصل پورت{% else %}قطع پورت{% endif %}
                                     </a>
-                                    <a href="{{ url_for('rebuild_vm_action', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از ریبیلد کامل ماشین مجازی در ESXi مطمئنید؟')" title="ریبیلد">
-                                        <i class="fas fa-redo"></i>
+                                    <a href="{{ url_for('rebuild_vm_action', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از ریبیلد کامل ماشین مجازی در ESXi مطمئنید؟')">
+                                        <i class="fas fa-redo"></i> ریبیلد
                                     </a>
                                     {% endif %}
-                                    <a href="{{ url_for('reset_traffic', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill" title="ریست ترافیک">
-                                        <i class="fas fa-sync"></i>
+                                    <a href="{{ url_for('reset_traffic', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
+                                        <i class="fas fa-sync"></i> ریست ترافیک
                                     </a>
-                                    <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-secondary rounded-pill" title="خاموش/روشن">
-                                        <i class="fas fa-power-off"></i>
+                                    <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+                                        <i class="fas fa-power-off"></i> {% if server[7] %}خاموش{% else %}روشن{% endif %}
                                     </a>
-                                    <a href="{{ url_for('delete_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این سرور از پنل مطمئنید؟ (آی‌پی آن در بانک آزاد می‌شود)')" title="حذف سرور">
-                                        <i class="fas fa-trash"></i>
+                                    <a href="{{ url_for('delete_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این سرور از پنل مطمئنید؟ (آی‌پی آن در بانک آزاد می‌شود)')">
+                                        <i class="fas fa-trash"></i> حذف
                                     </a>
                                 </div>
                             </td>
@@ -142,10 +137,10 @@
 <!-- Edit Server Modal -->
 <div class="modal fade" id="editServerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="background-color: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary);">
-            <div class="modal-header border-bottom" style="border-color: var(--border-subtle) !important;">
+        <div class="modal-content" style="background-color: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main);">
+            <div class="modal-header border-bottom" style="border-color: var(--border-color) !important;">
                 <h5 class="modal-title fw-bold"><i class="fas fa-pen text-primary me-2"></i>ویرایش اطلاعات سرور</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">✕</button>
             </div>
             <form method="POST" action="{{ url_for('manage_servers') }}">
                 <div class="modal-body d-flex flex-column gap-3">
@@ -179,7 +174,7 @@
                         <input type="text" name="telegram_chat_id" id="modal_srv_chat" class="form-control font-mono">
                     </div>
                 </div>
-                <div class="modal-footer border-top" style="border-color: var(--border-subtle) !important;">
+                <div class="modal-footer border-top" style="border-color: var(--border-color) !important;">
                     <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">انصراف</button>
                     <button type="submit" class="btn btn-primary rounded-pill px-4"><i class="fas fa-save me-1"></i>ذخیره تغییرات</button>
                 </div>

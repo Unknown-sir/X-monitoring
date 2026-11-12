@@ -48,88 +48,30 @@ document.addEventListener('DOMContentLoaded', () => {
         backdrop.addEventListener('click', closeSidebar);
     }
 
-    // 3. Chart.js Live Toggler (kept for backward compatibility)
-    const charts = {};
-    const chartIntervals = {};
-    const networkData = { upload: [], download: [], labels: [] };
-
-    window.toggleChart = function(chartId, chartType, serverId) {
-        const canvas = document.getElementById(chartId);
-        if (!canvas) return;
-
-        if (canvas.style.display === 'none' || !charts[chartId]) {
-            canvas.style.display = 'block';
-            if (!charts[chartId]) {
-                if (chartType === 'pie') {
-                    charts[chartId] = new Chart(canvas, {
-                        type: 'doughnut',
-                        data: {
-                            labels: ['مصرف‌شده', 'آزاد'],
-                            datasets: [{
-                                data: [0, 100],
-                                backgroundColor: ['#3b82f6', 'rgba(148, 163, 184, 0.15)'],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, cutout: '72%' }
-                    });
-                } else if (chartType === 'line') {
-                    charts[chartId] = new Chart(canvas, {
-                        type: 'line',
-                        data: {
-                            labels: networkData.labels,
-                            datasets: [
-                                { label: 'Upload (Mbps)', data: networkData.upload, borderColor: '#06b6d4', tension: 0.35, fill: false },
-                                { label: 'Download (Mbps)', data: networkData.download, borderColor: '#3b82f6', tension: 0.35, fill: false }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                x: { grid: { display: false } },
-                                y: { grid: { color: 'rgba(148, 163, 184, 0.12)' } }
-                            }
-                        }
-                    });
-                }
-            }
-
-            if (!chartIntervals[chartId]) {
-                chartIntervals[chartId] = setInterval(() => {
-                    fetch(`/monitor/${serverId}`)
-                        .then(res => res.json())
-                        .then(data => {
-                            if (chartId === 'cpu-chart' && charts[chartId]) {
-                                charts[chartId].data.datasets[0].data = [data.cpu_usage, Math.max(0, 100 - data.cpu_usage)];
-                                charts[chartId].update();
-                            } else if (chartId === 'ram-chart' && charts[chartId]) {
-                                charts[chartId].data.datasets[0].data = [data.ram_usage, Math.max(0, 100 - data.ram_usage)];
-                                charts[chartId].update();
-                            } else if (chartId === 'network-chart' && charts[chartId]) {
-                                networkData.labels.push(new Date().toLocaleTimeString());
-                                networkData.upload.push(data.upload);
-                                networkData.download.push(data.download);
-                                if (networkData.labels.length > 20) {
-                                    networkData.labels.shift();
-                                    networkData.upload.shift();
-                                    networkData.download.shift();
-                                }
-                                charts[chartId].data.labels = networkData.labels;
-                                charts[chartId].data.datasets[0].data = networkData.upload;
-                                charts[chartId].data.datasets[1].data = networkData.download;
-                                charts[chartId].update();
-                            }
-                        })
-                        .catch(err => console.error('Chart monitor error:', err));
-                }, 2000);
-            }
-        } else {
-            canvas.style.display = 'none';
-            if (chartIntervals[chartId]) {
-                clearInterval(chartIntervals[chartId]);
-                delete chartIntervals[chartId];
-            }
-        }
-    };
+    // 3. Pure-JS Fallback for Modals & Dropdowns (if Bootstrap CDN is blocked)
+    if (typeof window.bootstrap === 'undefined') {
+        document.querySelectorAll('[data-bs-toggle="modal"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetSel = btn.getAttribute('data-bs-target');
+                const modalEl = targetSel ? document.querySelector(targetSel) : null;
+                if (modalEl) modalEl.classList.add('show');
+            });
+        });
+        document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const modalEl = btn.closest('.modal');
+                if (modalEl) modalEl.classList.remove('show');
+            });
+        });
+        document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const menu = btn.parentElement.querySelector('.dropdown-menu');
+                if (menu) menu.classList.toggle('show');
+            });
+        });
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+        });
+    }
 });
