@@ -1301,10 +1301,6 @@ def assign_server_page():
         return render_template("admin_expired.html")
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, username FROM users WHERE active=1 AND username != 'marmmr'")
-    users = c.fetchall()
-    c.execute("SELECT id, name, ip FROM servers WHERE active=1 ORDER BY name ASC")
-    servers = c.fetchall()
     if request.method == "POST":
         user_id = request.form.get("user_id")
         server_id = request.form.get("server_id")
@@ -1316,9 +1312,50 @@ def assign_server_page():
             conn.commit()
             invalidate_servers_cache()
         conn.close()
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("assign_server_page"))
+
+    c.execute("SELECT id, username FROM users WHERE active=1 AND username != 'marmmr'")
+    users = c.fetchall()
+    c.execute("SELECT id, name, ip FROM servers WHERE active=1 ORDER BY name ASC")
+    servers = c.fetchall()
+    c.execute(
+        "SELECT us.user_id, u.username, us.server_id, s.name, s.ip "
+        "FROM user_servers us JOIN users u ON us.user_id = u.id JOIN servers s ON us.server_id = s.id "
+        "ORDER BY u.username ASC, s.name ASC"
+    )
+    assignments = c.fetchall()
     conn.close()
-    return render_template("assign_server.html", users=users, servers=servers)
+    return render_template("assign_server.html", users=users, servers=servers, assignments=assignments)
+
+
+@app.route("/unassign_server/<int:user_id>/<int:server_id>")
+@admin_required
+def unassign_server(user_id, server_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM user_servers WHERE user_id=? AND server_id=?", (user_id, server_id))
+    conn.commit()
+    conn.close()
+    invalidate_servers_cache()
+    return redirect(url_for("assign_server_page"))
+
+
+@app.route("/delete_server/<int:server_id>")
+@admin_required
+def delete_server(server_id):
+    if is_license_expired() and session.get("role") != "owner":
+        return render_template("admin_expired.html")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM user_servers WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM traffic_samples WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM events WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM servers WHERE id=?", (server_id,))
+    conn.commit()
+    conn.close()
+    invalidate_servers_cache()
+    return redirect(url_for("manage_servers"))
 
 
 @app.route("/manage_servers", methods=["GET", "POST"])

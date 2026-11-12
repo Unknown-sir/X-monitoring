@@ -1,29 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Add User{% endblock %}
+{% block title %}افزودن کاربر جدید | XMonitor{% endblock %}
 {% block content %}
-<div class="container mt-5">
-    <h2 class="text-center text-light mb-4"><i class="fas fa-user-plus"></i> Add New User</h2>
-    <form method="POST" action="{{ url_for('add_user_page') }}" class="row g-3">
-        <div class="col-md-3">
-            <input type="text" name="username" placeholder="Username" class="form-control" required>
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
+                    <i class="fas fa-user-plus text-primary"></i>
+                    افزودن کاربر جدید
+                </h2>
+                <p class="text-muted small mb-0">ایجاد حساب کاربری برای مشتریان یا مدیران پنل</p>
+            </div>
+            <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+                <i class="fas fa-arrow-right me-1"></i> بازگشت
+            </a>
         </div>
-        <div class="col-md-3">
-            <input type="password" name="password" placeholder="Password" class="form-control" required>
+
+        <div class="card">
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('add_user_page') }}" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">نام کاربری</label>
+                        <input type="text" name="username" placeholder="مثلاً: client_01" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">رمز عبور</label>
+                        <input type="password" name="password" placeholder="••••••••" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">نقش کاربری</label>
+                        <select name="role" class="form-select">
+                            <option value="user">کاربر عادی (User)</option>
+                            <option value="admin">مدیر (Admin)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">چت آیدی تلگرام (اختیاری)</label>
+                        <input type="text" name="telegram_chat_id" placeholder="123456789" class="form-control font-mono">
+                    </div>
+                    <div class="col-12 mt-3">
+                        <button type="submit" class="btn btn-primary rounded-pill px-4">
+                            <i class="fas fa-plus me-1"></i> ایجاد کاربر
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-        <div class="col-md-2">
-            <select name="role" class="form-control">
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <input type="text" name="telegram_chat_id" placeholder="Telegram Chat ID" class="form-control">
-        </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-success w-100"><i class="fas fa-plus"></i> Add User</button>
-        </div>
-    </form>
-    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary mt-3"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
-    <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3"><i class="fas fa-sign-out-alt"></i> Log Out</a>
+    </div>
 </div>
 {% endblock %}

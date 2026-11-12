@@ -4,129 +4,153 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}XMonitor{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-dark">
-    <nav class="navbar navbar-expand-lg navbar-dark app-navbar shadow-sm">
-        <div class="container-fluid px-3 px-lg-4">
-            <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('dashboard') }}">
-                <span class="brand-icon d-inline-flex align-items-center justify-content-center rounded-3">
-                    <i class="fas fa-server"></i>
-                </span>
-                <span class="fw-semibold">XMonitor</span>
+
+{% if session.get('user_id') %}
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+<div class="app-shell">
+    <!-- Sidebar -->
+    <aside class="app-sidebar" id="appSidebar">
+        <a href="{{ url_for('dashboard') }}" class="sidebar-brand">
+            <span class="brand-logo-box">
+                <i class="fas fa-bolt"></i>
+            </span>
+            <div>
+                <div class="fw-bold fs-6 lh-1">XMonitor</div>
+                <small class="text-muted" style="font-size: 0.72rem;">ESXi & Traffic Cloud</small>
+            </div>
+        </a>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section-label">نمای کلی</div>
+            <a href="{{ url_for('dashboard') }}" class="sidebar-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <i class="fas fa-gauge-high"></i>
+                <span>داشبورد سرورها</span>
             </a>
 
-            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
+            {% if session.get('role') in ['admin', 'owner'] %}
+            <div class="nav-section-label">زیرساخت و ESXi</div>
+            <a href="{{ url_for('admin_dashboard') }}" class="sidebar-link {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+                <i class="fas fa-chart-pie"></i>
+                <span>پنل مدیریت</span>
+            </a>
+            <a href="{{ url_for('manage_servers') }}" class="sidebar-link {% if request.endpoint == 'manage_servers' %}active{% endif %}">
+                <i class="fas fa-server"></i>
+                <span>مدیریت سرورها</span>
+            </a>
+            <a href="{{ url_for('create_vm_page') }}" class="sidebar-link {% if request.endpoint == 'create_vm_page' %}active{% endif %}">
+                <i class="fas fa-plus-circle text-primary"></i>
+                <span>ساخت سرور در ESXi</span>
+            </a>
+            <a href="{{ url_for('esxi_hosts_page') }}" class="sidebar-link {% if request.endpoint == 'esxi_hosts_page' %}active{% endif %}">
+                <i class="fas fa-network-wired text-info"></i>
+                <span>هاست‌های ESXi</span>
+            </a>
+            <a href="{{ url_for('ip_pool_page') }}" class="sidebar-link {% if request.endpoint == 'ip_pool_page' %}active{% endif %}">
+                <i class="fas fa-sitemap text-success"></i>
+                <span>بانک آی‌پی (IP Pool)</span>
+            </a>
 
-            <div class="collapse navbar-collapse" id="mainNavbar">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-lg-center">
-                    {% if session.get('user_id') %}
-                        <li class="nav-item">
-                            <a class="nav-link{% if request.endpoint == 'dashboard' %} active{% endif %}" href="{{ url_for('dashboard') }}">
-                                <i class="fas fa-gauge me-1"></i>
-                                داشبورد
-                            </a>
-                        </li>
+            <div class="nav-section-label">کاربران و دسترسی</div>
+            <a href="{{ url_for('manage_users') }}" class="sidebar-link {% if request.endpoint in ['manage_users', 'add_user_page'] %}active{% endif %}">
+                <i class="fas fa-users"></i>
+                <span>مدیریت کاربران</span>
+            </a>
+            <a href="{{ url_for('assign_server_page') }}" class="sidebar-link {% if request.endpoint == 'assign_server_page' %}active{% endif %}">
+                <i class="fas fa-link"></i>
+                <span>اتصال سرور به کاربر</span>
+            </a>
+            <a href="{{ url_for('events_page') }}" class="sidebar-link {% if request.endpoint == 'events_page' %}active{% endif %}">
+                <i class="fas fa-bell"></i>
+                <span>گزارش رویدادها</span>
+            </a>
 
-                        {% if session.get('role') in ['admin', 'owner'] %}
-                            <li class="nav-item dropdown">
-                                <a class="nav-link dropdown-toggle{% if request.endpoint in ['admin_dashboard','manage_servers','manage_users','add_server_page','add_user_page','assign_server_page','esxi_hosts_page','create_vm_page','ip_pool_page'] %} active{% endif %}" href="#" id="adminMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <i class="fas fa-shield-halved me-1"></i>
-                                    مدیریت
-                                </a>
-                                <ul class="dropdown-menu dropdown-menu-dark shadow-sm" aria-labelledby="adminMenu">
-                                    <li><a class="dropdown-item" href="{{ url_for('admin_dashboard') }}"><i class="fas fa-cogs me-2"></i>پنل ادمین</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('manage_servers') }}"><i class="fas fa-server me-2"></i>مدیریت سرورها</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('create_vm_page') }}"><i class="fas fa-plus-circle me-2 text-primary"></i>ساخت سرور در ESXi</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('esxi_hosts_page') }}"><i class="fas fa-network-wired me-2 text-info"></i>هاست‌های ESXi</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('ip_pool_page') }}"><i class="fas fa-sitemap me-2 text-success"></i>بانک آی‌پی (IP Pool)</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('manage_users') }}"><i class="fas fa-users me-2"></i>مدیریت کاربران</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('assign_server_page') }}"><i class="fas fa-link me-2"></i>اتصال سرور به کاربر</a></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('register_license') }}"><i class="fas fa-key me-2"></i>ثبت لایسنس</a></li>
-                                    {% if session.get('role') == 'owner' %}
-                                        <li><a class="dropdown-item" href="{{ url_for('generate_license') }}"><i class="fas fa-wand-magic-sparkles me-2"></i>تولید لایسنس</a></li>
-                                    {% endif %}
-                                </ul>
-                            </li>
-                        {% endif %}
-                    {% endif %}
-                </ul>
+            <div class="nav-section-label">لایسنس</div>
+            <a href="{{ url_for('register_license') }}" class="sidebar-link {% if request.endpoint == 'register_license' %}active{% endif %}">
+                <i class="fas fa-key"></i>
+                <span>ثبت لایسنس</span>
+            </a>
+            {% if session.get('role') == 'owner' %}
+            <a href="{{ url_for('generate_license') }}" class="sidebar-link {% if request.endpoint == 'generate_license' %}active{% endif %}">
+                <i class="fas fa-wand-magic-sparkles"></i>
+                <span>تولید لایسنس</span>
+            </a>
+            {% endif %}
+            {% endif %}
+        </nav>
 
-                <div class="d-flex align-items-center gap-3">
-                    <div class="theme-toggle-wrapper d-none d-md-flex align-items-center">
-                        <span class="text-muted small me-2 d-none d-lg-inline">تم</span>
-                        <input type="checkbox" id="themeSwitch" class="d-none">
-                        <label for="themeSwitch" class="theme-switch mb-0">
-                            <span class="theme-icon dark"><i class="fas fa-moon"></i></span>
-                            <span class="theme-icon light"><i class="fas fa-sun"></i></span>
-                        </label>
-                    </div>
+        <div class="sidebar-footer d-flex flex-column gap-2">
+            <a href="{{ url_for('profile') }}" class="sidebar-link {% if request.endpoint == 'profile' %}active{% endif %}">
+                <i class="fas fa-user-cog"></i>
+                <span>پروفایل ({{ session.get('username', 'User') }})</span>
+            </a>
+            <a href="{{ url_for('logout') }}" class="sidebar-link text-danger">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>خروج از حساب</span>
+            </a>
+        </div>
+    </aside>
 
-                    {% if session.get('user_id') %}
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-light rounded-pill d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <span class="user-avatar d-inline-flex align-items-center justify-content-center rounded-circle">
-                                    <i class="fas fa-user"></i>
-                                </span>
-                                <span class="d-none d-sm-inline text-truncate" style="max-width: 140px;">
-                                    {{ session.get('username', 'User') }}
-                                </span>
-                                <span class="badge bg-primary-subtle text-uppercase ms-1 small">
-                                    {{ session.get('role', '') }}
-                                </span>
-                            </button>
-                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow-sm">
-                                <li class="dropdown-header small text-muted">
-                                    وارد شده با کاربری {{ session.get('username', 'User') }}
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="{{ url_for('profile') }}">
-                                        <i class="fas fa-id-badge me-2"></i>
-                                        پروفایل
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
-                                        <i class="fas fa-sign-out-alt me-2"></i>
-                                        خروج
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    {% else %}
-                        <a href="{{ url_for('login') }}" class="btn btn-outline-light btn-sm rounded-pill">
-                            <i class="fas fa-sign-in-alt me-1"></i>
-                            ورود
-                        </a>
-                    {% endif %}
+    <!-- Content Area -->
+    <div class="app-content-wrap">
+        <header class="app-topbar">
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarToggleBtn" type="button">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="d-none d-sm-flex align-items-center gap-2 small text-muted">
+                    <i class="fas fa-shield-halved text-primary"></i>
+                    <span>پنل کنترل هوشمند سرورها</span>
                 </div>
             </div>
-        </div>
-    </nav>
 
-    <main class="app-main container-fluid py-4">
-        <div class="row justify-content-center">
-            <div class="col-12 col-xl-11">
-                {% block content %}{% endblock %}
+            <div class="d-flex align-items-center gap-2">
+                <button class="theme-toggle-btn" id="themeToggleBtn" type="button" title="تغییر تم روشن/تاریک">
+                    <i class="fas fa-sun" id="themeToggleIcon"></i>
+                </button>
+
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill d-flex align-items-center gap-2 px-3 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="border-color: var(--border-subtle); color: var(--text-primary);">
+                        <i class="fas fa-user-circle text-primary"></i>
+                        <span class="small fw-semibold">{{ session.get('username', 'User') }}</span>
+                        <span class="badge {% if session.get('role') == 'owner' %}bg-purple{% elif session.get('role') == 'admin' %}bg-primary{% else %}bg-secondary{% endif %} rounded-pill" style="font-size: 0.65rem;">
+                            {{ session.get('role', '') }}
+                        </span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow-sm">
+                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-badge me-2"></i>تنظیمات پروفایل</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>خروج</a></li>
+                    </ul>
+                </div>
             </div>
-        </div>
-    </main>
+        </header>
 
-    <footer class="app-footer text-center text-light py-3 mt-2">
-        <small class="text-muted">
-            © 2025 XMonitor • پنل هوشمند مانیتورینگ و اتوماسیون مجازی‌سازی
-        </small>
-    </footer>
+        <main class="app-main">
+            {% block content %}{% endblock %}
+        </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+        <footer class="app-footer">
+            XMonitor Cloud & ESXi Automation Panel • © 2026
+        </footer>
+    </div>
+</div>
+
+{% else %}
+    {% block auth_content %}{% endblock %}
+    {% block content_unauth %}{% endblock %}
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

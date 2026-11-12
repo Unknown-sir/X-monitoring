@@ -1,44 +1,46 @@
 {% extends "base.html" %}
-{% block title %}مانیتورینگ لحظه‌ای سرور{% endblock %}
+{% block title %}مانیتورینگ لحظه‌ای سرور #{{ server_id }} | XMonitor{% endblock %}
 {% block content %}
-<div class="container py-4">
+<div class="live-monitor-page">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
-            <h2 class="h5 mb-1 text-light">
-                <i class="fas fa-wave-square me-2"></i>
-                مانیتورینگ لحظه‌ای سرور
+            <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
+                <span class="pulse-dot"></span>
+                مانیتورینگ لحظه‌ای سرور <span class="font-mono text-primary">#{{ server_id }}</span>
             </h2>
-            <p class="mb-0 text-muted small">
-                شناسه سرور:
-                <span class="fw-semibold text-light">#{{ server_id }}</span>
-            </p>
+            <p class="mb-0 text-muted small">به‌روزرسانی خودکار منابع سخت‌افزاری، شبکه و تاخیر هر ۲ ثانیه</p>
         </div>
-        <div>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-sm">
-                <i class="fas fa-arrow-left me-1"></i>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+                <i class="fas fa-arrow-right me-1"></i>
                 بازگشت به داشبورد
             </a>
         </div>
     </div>
 
-    <div class="row g-3">
+    <!-- Top KPI Cards -->
+    <div class="row g-3 mb-4">
         <!-- CPU -->
         <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
+            <div class="card h-100">
                 <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-microchip me-2"></i>CPU</span>
-                        <span id="cpu_usage_badge" class="badge bg-secondary">0%</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">تعداد هسته</p>
-                    <p class="mb-2"><span id="total_cpu" class="fw-semibold">0</span></p>
-                    <p class="mb-1 text-muted small">مصرف لحظه‌ای</p>
-                    <div class="progress" style="height: 6px;">
-                        <div id="cpu_bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="fw-semibold d-flex align-items-center gap-2">
+                            <span class="stat-icon bg-primary-subtle text-primary" style="width:32px;height:32px;"><i class="fas fa-microchip"></i></span>
+                            پردازنده (CPU)
+                        </span>
+                        <span id="cpu_usage_badge" class="badge bg-primary-subtle text-primary font-mono">0%</span>
                     </div>
-                    <div class="d-flex justify-content-between mt-1 small text-muted">
-                        <span>0%</span>
-                        <span id="cpu_usage" class="text-light">0</span>
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>تعداد هسته‌ها:</span>
+                        <span id="total_cpu" class="fw-bold text-white font-mono">0</span>
+                    </div>
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div id="cpu_bar" class="progress-bar bg-primary" style="width: 0%;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>مصرف لحظه‌ای</span>
+                        <span id="cpu_usage" class="font-mono">0%</span>
                     </div>
                 </div>
             </div>
@@ -46,24 +48,51 @@
 
         <!-- RAM -->
         <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
+            <div class="card h-100">
                 <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-memory me-2"></i>RAM</span>
-                        <span id="ram_usage_badge" class="badge bg-secondary">0%</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">کل حافظه</p>
-                    <p class="mb-2">
-                        <span id="total_ram" class="fw-semibold">0</span>
-                        <span class="text-muted small">MB</span>
-                    </p>
-                    <p class="mb-1 text-muted small">مصرف لحظه‌ای</p>
-                    <div class="progress" style="height: 6px;">
-                        <div id="ram_bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="fw-semibold d-flex align-items-center gap-2">
+                            <span class="stat-icon bg-info-subtle text-info" style="width:32px;height:32px;"><i class="fas fa-memory"></i></span>
+                            حافظه (RAM)
+                        </span>
+                        <span id="ram_usage_badge" class="badge bg-info-subtle text-info font-mono">0%</span>
                     </div>
-                    <div class="d-flex justify-content-between mt-1 small text-muted">
-                        <span>0%</span>
-                        <span id="ram_usage" class="text-light">0</span>
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>کل حافظه:</span>
+                        <span class="fw-bold text-white font-mono"><span id="total_ram">0</span> MB</span>
+                    </div>
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div id="ram_bar" class="progress-bar bg-info" style="width: 0%;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>مصرف لحظه‌ای</span>
+                        <span id="ram_usage" class="font-mono">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Traffic -->
+        <div class="col-md-6 col-xl-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="fw-semibold d-flex align-items-center gap-2">
+                            <span class="stat-icon bg-success-subtle text-success" style="width:32px;height:32px;"><i class="fas fa-tachometer-alt"></i></span>
+                            ترافیک ماهانه
+                        </span>
+                        <span id="traffic_percent_badge" class="badge bg-success-subtle text-success font-mono">0%</span>
+                    </div>
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span>سقف مجاز:</span>
+                        <span class="fw-bold text-white font-mono"><span id="traffic_limit">0</span> GiB</span>
+                    </div>
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div id="traffic_bar" class="progress-bar bg-success" style="width: 0%;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>مصرف‌شده تاکنون</span>
+                        <span class="font-mono"><span id="traffic_usage">0</span> GiB</span>
                     </div>
                 </div>
             </div>
@@ -71,96 +100,106 @@
 
         <!-- Network -->
         <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
+            <div class="card h-100">
                 <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-network-wired me-2"></i>شبکه</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">دانلود</p>
-                    <p class="mb-2">
-                        <span id="download" class="fw-semibold">0</span>
-                        <span class="text-muted small">Mbps</span>
-                    </p>
-                    <p class="mb-1 text-muted small">آپلود</p>
-                    <p class="mb-2">
-                        <span id="upload" class="fw-semibold">0</span>
-                        <span class="text-muted small">Mbps</span>
-                    </p>
-                    <p class="mb-1 text-muted small">مجموع</p>
-                    <p class="mb-0">
-                        <span id="total_network" class="fw-semibold">0</span>
-                        <span class="text-muted small">Mbps</span>
-                    </p>
+                    <div class="fw-semibold d-flex align-items-center gap-2 mb-3">
+                        <span class="stat-icon bg-warning-subtle text-warning" style="width:32px;height:32px;"><i class="fas fa-network-wired"></i></span>
+                        پهنای باند لحظه‌ای
+                    </div>
+                    <div class="row text-center g-2">
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">دانلود</div>
+                                <div class="fw-bold font-mono text-info mt-1"><span id="download">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">Mbps</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">آپلود</div>
+                                <div class="fw-bold font-mono text-primary mt-1"><span id="upload">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">Mbps</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">مجموع</div>
+                                <div class="fw-bold font-mono text-white mt-1"><span id="total_network">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">Mbps</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Disk -->
         <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
+            <div class="card h-100">
                 <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-hdd me-2"></i>دیسک</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">کل دیسک</p>
-                    <p class="mb-2">
-                        <span id="total_disk" class="fw-semibold">0</span>
-                        <span class="text-muted small">GB</span>
-                    </p>
-                    <p class="mb-1 text-muted small">Read</p>
-                    <p class="mb-2">
-                        <span id="disk_read" class="fw-semibold">0</span>
-                        <span class="text-muted small">MB/s</span>
-                    </p>
-                    <p class="mb-1 text-muted small">Write</p>
-                    <p class="mb-0">
-                        <span id="disk_write" class="fw-semibold">0</span>
-                        <span class="text-muted small">MB/s</span>
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Traffic -->
-        <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
-                <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-tachometer-alt me-2"></i>ترافیک</span>
-                        <span id="traffic_percent_badge" class="badge bg-secondary">0%</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">حد ترافیک</p>
-                    <p class="mb-2">
-                        <span id="traffic_limit" class="fw-semibold">0</span>
-                        <span class="text-muted small">GiB</span>
-                    </p>
-                    <p class="mb-1 text-muted small">مصرف شده</p>
-                    <p class="mb-0">
-                        <span id="traffic_usage" class="fw-semibold">0</span>
-                        <span class="text-muted small">GiB</span>
-                    </p>
+                    <div class="fw-semibold d-flex align-items-center gap-2 mb-3">
+                        <span class="stat-icon bg-secondary-subtle text-light" style="width:32px;height:32px;"><i class="fas fa-hdd"></i></span>
+                        وضعیت دیسک (I/O)
+                    </div>
+                    <div class="row text-center g-2">
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">ظرفیت</div>
+                                <div class="fw-bold font-mono mt-1"><span id="total_disk">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">GB</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">Read</div>
+                                <div class="fw-bold font-mono text-success mt-1"><span id="disk_read">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">MB/s</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-2 rounded-3" style="background: var(--bg-input);">
+                                <div class="small text-muted">Write</div>
+                                <div class="fw-bold font-mono text-warning mt-1"><span id="disk_write">0</span></div>
+                                <div class="text-muted" style="font-size:0.7rem;">MB/s</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Ping -->
         <div class="col-md-6 col-xl-4">
-            <div class="card glass-card h-100 text-light">
+            <div class="card h-100">
                 <div class="card-body">
-                    <h5 class="card-title mb-3 d-flex justify-content-between align-items-center">
-                        <span><i class="fas fa-signal me-2"></i>Ping</span>
-                    </h5>
-                    <p class="mb-1 text-muted small">Ping سرور</p>
-                    <p class="mb-2">
-                        <span id="ping_time" class="fw-semibold">0</span>
-                        <span class="text-muted small">ms</span>
-                    </p>
-                    <p class="mb-1 text-muted small">Ping فرانسه</p>
-                    <p class="mb-0">
-                        <span id="ping_france_time" class="fw-semibold">0</span>
-                        <span class="text-muted small">ms</span>
-                    </p>
+                    <div class="fw-semibold d-flex align-items-center gap-2 mb-3">
+                        <span class="stat-icon bg-success-subtle text-success" style="width:32px;height:32px;"><i class="fas fa-signal"></i></span>
+                        تاخیر شبکه (Ping)
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3" style="background: var(--bg-input);">
+                        <div>
+                            <div class="small text-muted">پینگ مستقیم سرور</div>
+                            <div class="fs-4 fw-bold font-mono text-success mt-1"><span id="ping_time">0</span> <small class="fs-6 text-muted">ms</small></div>
+                        </div>
+                        <span id="server_live_badge" class="badge bg-success-subtle text-success rounded-pill px-3 py-2">متصل</span>
+                    </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Network Chart -->
+    <div class="card">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="h6 fw-bold mb-0 d-flex align-items-center gap-2">
+                    <i class="fas fa-wave-square text-primary"></i>
+                    نمودار زنده ترافیک شبکه (Mbps)
+                </h5>
+                <span class="small text-muted">۲۰ نمونه اخیر</span>
+            </div>
+            <div style="height: 280px;">
+                <canvas id="liveNetChart"></canvas>
             </div>
         </div>
     </div>
@@ -169,64 +208,98 @@
 <script>
 function clampPercent(v) {
     if (isNaN(v)) return 0;
-    if (v < 0) return 0;
-    if (v > 100) return 100;
-    return v;
+    return Math.min(100, Math.max(0, v));
 }
+
+const netLabels = [];
+const netDown = [];
+const netUp = [];
+
+const ctx = document.getElementById('liveNetChart').getContext('2d');
+const downGrad = ctx.createLinearGradient(0, 0, 0, 260);
+downGrad.addColorStop(0, 'rgba(6, 182, 212, 0.35)');
+downGrad.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
+
+const upGrad = ctx.createLinearGradient(0, 0, 0, 260);
+upGrad.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
+upGrad.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+const liveChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: netLabels,
+        datasets: [
+            { label: 'Download (Mbps)', data: netDown, borderColor: '#06b6d4', backgroundColor: downGrad, fill: true, tension: 0.38, pointRadius: 2 },
+            { label: 'Upload (Mbps)', data: netUp, borderColor: '#3b82f6', backgroundColor: upGrad, fill: true, tension: 0.38, pointRadius: 2 }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 250 },
+        scales: {
+            x: { ticks: { color: '#94a3b8', maxRotation: 0 }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.1)' } }
+        },
+        plugins: {
+            legend: { labels: { color: '#cbd5e1', usePointStyle: true } }
+        }
+    }
+});
 
 function updateMetrics() {
     fetch('/monitor/{{ server_id }}')
         .then(res => res.json())
         .then(data => {
-            // CPU
-            const totalCpu = data.total_cpu || 0;
+            if (data.error) {
+                document.getElementById('server_live_badge').className = 'badge bg-danger-subtle text-danger rounded-pill px-3 py-2';
+                document.getElementById('server_live_badge').textContent = 'آفلاین';
+                return;
+            }
+            document.getElementById('server_live_badge').className = 'badge bg-success-subtle text-success rounded-pill px-3 py-2';
+            document.getElementById('server_live_badge').textContent = 'متصل';
+
             const cpuUsage = Number(data.cpu_usage || 0);
-            document.getElementById('total_cpu').textContent = totalCpu.toString();
-            document.getElementById('cpu_usage').textContent = cpuUsage.toFixed(1);
+            document.getElementById('total_cpu').textContent = data.total_cpu || 0;
+            document.getElementById('cpu_usage').textContent = cpuUsage.toFixed(1) + '%';
             document.getElementById('cpu_usage_badge').textContent = cpuUsage.toFixed(1) + '%';
             document.getElementById('cpu_bar').style.width = clampPercent(cpuUsage).toFixed(0) + '%';
 
-            // RAM
-            const totalRam = data.total_ram || 0;
             const ramUsage = Number(data.ram_usage || 0);
-            document.getElementById('total_ram').textContent = totalRam.toString();
-            document.getElementById('ram_usage').textContent = ramUsage.toFixed(1);
+            document.getElementById('total_ram').textContent = data.total_ram || 0;
+            document.getElementById('ram_usage').textContent = ramUsage.toFixed(1) + '%';
             document.getElementById('ram_usage_badge').textContent = ramUsage.toFixed(1) + '%';
             document.getElementById('ram_bar').style.width = clampPercent(ramUsage).toFixed(0) + '%';
 
-            // Network
             const download = Number(data.download || 0);
             const upload = Number(data.upload || 0);
-            const totalNet = Number(data.total_network || (download + upload));
             document.getElementById('download').textContent = download.toFixed(2);
             document.getElementById('upload').textContent = upload.toFixed(2);
-            document.getElementById('total_network').textContent = totalNet.toFixed(2);
+            document.getElementById('total_network').textContent = (download + upload).toFixed(2);
 
-            // Disk
-            const totalDisk = Number(data.total_disk || 0);
-            const diskRead = Number(data.disk_read || 0);
-            const diskWrite = Number(data.disk_write || 0);
-            document.getElementById('total_disk').textContent = totalDisk.toFixed(1);
-            document.getElementById('disk_read').textContent = diskRead.toFixed(2);
-            document.getElementById('disk_write').textContent = diskWrite.toFixed(2);
+            document.getElementById('total_disk').textContent = Number(data.total_disk || 0).toFixed(1);
+            document.getElementById('disk_read').textContent = Number(data.disk_read || 0).toFixed(2);
+            document.getElementById('disk_write').textContent = Number(data.disk_write || 0).toFixed(2);
 
-            // Traffic
             const trafficLimit = Number(data.traffic_limit || 0);
             const trafficUsage = Number(data.traffic_usage || 0);
-            let percent = 0;
-            if (trafficLimit > 0) {
-                percent = (trafficUsage / trafficLimit) * 100;
-            }
-            percent = clampPercent(percent);
-            document.getElementById('traffic_limit').textContent = trafficLimit.toFixed(1);
-            document.getElementById('traffic_usage').textContent = trafficUsage.toFixed(1);
-            document.getElementById('traffic_percent_badge').textContent = percent.toFixed(1) + '%';
+            const pct = trafficLimit > 0 ? clampPercent((trafficUsage / trafficLimit) * 100) : 0;
+            document.getElementById('traffic_limit').textContent = trafficLimit > 0 ? trafficLimit.toFixed(1) : '∞';
+            document.getElementById('traffic_usage').textContent = trafficUsage.toFixed(2);
+            document.getElementById('traffic_percent_badge').textContent = pct.toFixed(1) + '%';
+            document.getElementById('traffic_bar').style.width = pct.toFixed(0) + '%';
 
-            // Ping
-            const ping = Number(data.ping_time || 0);
-            const pingFr = Number(data.ping_france_time || 0);
-            document.getElementById('ping_time').textContent = ping.toFixed(0);
-            document.getElementById('ping_france_time').textContent = pingFr.toFixed(0);
+            document.getElementById('ping_time').textContent = Number(data.ping_time || 0).toFixed(1);
+
+            netLabels.push(new Date().toLocaleTimeString());
+            netDown.push(download);
+            netUp.push(upload);
+            if (netLabels.length > 20) {
+                netLabels.shift();
+                netDown.shift();
+                netUp.shift();
+            }
+            liveChart.update();
         })
         .catch(err => console.error('monitor fetch error:', err));
 }

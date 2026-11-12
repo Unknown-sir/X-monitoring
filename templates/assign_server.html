@@ -2,29 +2,31 @@
 {% block title %}اتصال سرور به کاربر | XMonitor{% endblock %}
 {% block content %}
 <div class="manage-section">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
+            <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
                 <i class="fas fa-link text-primary"></i>
                 اتصال سرور به کاربر
             </h2>
             <p class="text-muted mb-0 small">
-                انتخاب کاربر و سرور برای تعریف دسترسی مشاهده و مانیتور
+                تخصیص دسترسی مشاهده، مانیتورینگ و شارژ ترافیک سرورها به مشتریان
             </p>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
-                <i class="fas fa-arrow-right-long me-1"></i>
-                بازگشت به پنل مدیریت
-            </a>
-        </div>
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+            <i class="fas fa-arrow-right me-1"></i>
+            پنل مدیریت
+        </a>
     </div>
 
-    <div class="card border-0 mb-3">
-        <div class="card-body">
+    <div class="card mb-4">
+        <div class="card-body p-4">
+            <h5 class="h6 fw-bold mb-3 d-flex align-items-center gap-2">
+                <i class="fas fa-plus-circle text-success"></i>
+                ثبت اتصال جدید
+            </h5>
             <form method="POST" action="{{ url_for('assign_server_page') }}" class="row g-3 align-items-end">
                 <div class="col-md-5">
-                    <label class="form-label small text-muted">کاربر</label>
+                    <label class="form-label">انتخاب کاربر (مشتری)</label>
                     <select name="user_id" class="form-select" required>
                         {% for user in users %}
                         <option value="{{ user[0] }}">{{ user[1] }}</option>
@@ -32,7 +34,7 @@
                     </select>
                 </div>
                 <div class="col-md-5">
-                    <label class="form-label small text-muted">سرور</label>
+                    <label class="form-label">انتخاب سرور</label>
                     <select name="server_id" class="form-select" required>
                         {% for server in servers %}
                         <option value="{{ server[0] }}">{{ server[1] }} ({{ server[2] }})</option>
@@ -40,7 +42,7 @@
                     </select>
                 </div>
                 <div class="col-md-2 d-grid">
-                    <button type="submit" class="btn btn-primary rounded-3">
+                    <button type="submit" class="btn btn-primary rounded-pill">
                         <i class="fas fa-link me-1"></i>
                         اتصال
                     </button>
@@ -49,15 +51,45 @@
         </div>
     </div>
 
-    <div class="d-flex flex-wrap gap-2 mt-2">
-        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light">
-            <i class="fas fa-arrow-right-long me-2"></i>
-            بازگشت به پنل مدیریت
-        </a>
-        <a href="{{ url_for('logout') }}" class="btn btn-danger">
-            <i class="fas fa-sign-out-alt me-2"></i>
-            خروج از حساب
-        </a>
+    <div class="card overflow-hidden">
+        <div class="card-body p-0">
+            <div class="p-3 border-bottom" style="border-color: var(--border-subtle) !important;">
+                <h6 class="fw-bold mb-0"><i class="fas fa-list-check text-info me-2"></i>فهرست اتصال‌های فعال</h6>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>نام کاربر</th>
+                            <th>نام سرور</th>
+                            <th>آدرس IP سرور</th>
+                            <th class="text-end">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in assignments %}
+                        <tr>
+                            <td class="fw-semibold"><i class="fas fa-user text-muted me-2"></i>{{ item[1] }}</td>
+                            <td class="fw-semibold">{{ item[3] }}</td>
+                            <td class="font-mono small text-muted">{{ item[4] }}</td>
+                            <td class="text-end">
+                                <a href="{{ url_for('unassign_server', user_id=item[0], server_id=item[2]) }}"
+                                   class="btn btn-sm btn-outline-danger rounded-pill px-3"
+                                   onclick="return confirm('آیا از لغو دسترسی این کاربر به سرور مطمئنید؟')">
+                                    <i class="fas fa-unlink me-1"></i>
+                                    لغو اتصال
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">هنوز هیچ سروری به کاربری متصل نشده است.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

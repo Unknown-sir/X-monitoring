@@ -2,189 +2,134 @@
 {% block title %}مدیریت سرورها | XMonitor{% endblock %}
 {% block content %}
 <div class="manage-section">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-            <h2 class="h4 mb-1 text-white d-flex align-items-center gap-2">
-                <i class="fas fa-tools text-primary"></i>
+            <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
+                <i class="fas fa-server text-primary"></i>
                 مدیریت سرورها
             </h2>
             <p class="text-muted mb-0 small">
-                مشاهده، ویرایش مشخصات، کنترل وضعیت شبکه در ESXi، اسنپ‌شات و ریبیلد سرورها
+                کنترل وضعیت پورت ESXi، اسنپ‌شات، ریبیلد، تغییر آی‌پی و تنظیمات ترافیک
             </p>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-primary rounded-pill">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <div class="input-group input-group-sm" style="width: 220px;">
+                <span class="input-group-text bg-transparent text-muted" style="border-color: var(--border-subtle) !important;">
+                    <i class="fas fa-search"></i>
+                </span>
+                <input type="text" id="serverSearchInput" class="form-control" placeholder="جستجوی نام یا IP..." oninput="filterServersTable()">
+            </div>
+            <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-primary rounded-pill px-3">
                 <i class="fas fa-plus-circle me-1"></i>
-                ساخت سرور مجازی در ESXi
+                ساخت سرور در ESXi
             </a>
-            <a href="{{ url_for('ip_pool_page') }}" class="btn btn-sm btn-outline-success rounded-pill">
+            <a href="{{ url_for('ip_pool_page') }}" class="btn btn-sm btn-outline-success rounded-pill px-3">
                 <i class="fas fa-sitemap me-1"></i>
                 بانک آی‌پی
             </a>
-            <a href="{{ url_for('esxi_hosts_page') }}" class="btn btn-sm btn-outline-info rounded-pill">
-                <i class="fas fa-server me-1"></i>
-                هاست‌های ESXi
-            </a>
-            <a href="{{ url_for('add_server_page') }}" class="btn btn-sm btn-outline-light rounded-pill">
+            <a href="{{ url_for('add_server_page') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
                 <i class="fas fa-plus me-1"></i>
                 افزودن دستی
-            </a>
-            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
-                <i class="fas fa-arrow-right-long me-1"></i>
-                پنل مدیریت
             </a>
         </div>
     </div>
 
-    <div class="card border-0 mb-3">
+    <div class="card mb-4 overflow-hidden">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-dark align-middle mb-0">
-                    <thead class="small text-uppercase text-muted">
+                <table class="table align-middle mb-0" id="serversTable">
+                    <thead>
                         <tr>
-                            <th scope="col">ID</th>
-                            <th scope="col">نام سرور</th>
-                            <th scope="col">IP و Gateway</th>
-                            <th scope="col">کاربر SSH</th>
-                            <th scope="col">حد ترافیک (GiB)</th>
-                            <th scope="col">مصرف ثبت‌شده</th>
-                            <th scope="col">وضعیت ماشین</th>
-                            <th scope="col">پورت شبکه (ESXi)</th>
-                            <th scope="col" class="text-end">عملیات</th>
+                            <th>#</th>
+                            <th>نام سرور</th>
+                            <th>IP و Gateway</th>
+                            <th>مصرف / حد مجاز</th>
+                            <th>وضعیت ماشین</th>
+                            <th>پورت شبکه (ESXi)</th>
+                            <th class="text-end">عملیات</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for server in servers %}
-                        <tr>
-                            <td class="small text-muted">{{ server[0] }}</td>
+                        <tr class="server-row">
+                            <td class="small text-muted font-mono">{{ server[0] }}</td>
                             <td>
-                                <strong>{{ server[1] }}</strong>
+                                <div class="fw-bold srv-name">{{ server[1] }}</div>
                                 {% if server[11] %}
-                                <div class="small text-muted">VMID: {{ server[11] }}</div>
+                                <small class="text-muted font-mono">VMID: {{ server[11] }}</small>
                                 {% endif %}
                             </td>
-                            <td class="text-muted small" style="direction:ltr;">
-                                <div>{{ server[2] }}</div>
+                            <td>
+                                <div class="font-mono small srv-ip">{{ server[2] }}</div>
                                 {% if server[13] %}
-                                <div class="text-secondary small">GW: {{ server[13] }}</div>
+                                <div class="text-muted font-mono" style="font-size:0.72rem;">GW: {{ server[13] }}</div>
                                 {% endif %}
                             </td>
-                            <td class="small">
-                                {{ server[3] }}
-                            </td>
-                            <td class="small">
-                                {% if server[5] %}
-                                    {{ server[5] }} GiB
-                                {% else %}
-                                    <span class="text-muted">نامحدود</span>
+                            <td>
+                                <div class="font-mono small fw-semibold">
+                                    {{ '%.2f'|format(server[8] or 0) }} / {{ server[5] if server[5] else '∞' }} GiB
+                                </div>
+                                {% if session.get('role') == 'owner' %}
+                                <form method="POST" action="{{ url_for('update_server_limit', server_id=server[0]) }}" class="d-flex gap-1 mt-1">
+                                    <input type="number" step="0.1" min="0" name="traffic_limit" value="{{ server[5] or '' }}" class="form-control form-control-sm py-0 px-2" style="max-width:75px;font-size:0.75rem;" placeholder="GiB">
+                                    <button type="submit" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size:0.72rem;">ثبت</button>
+                                </form>
                                 {% endif %}
-                            </td>
-                            <td class="small">
-                                {{ server[8] or 0 }} GiB
                             </td>
                             <td>
                                 {% if server[7] %}
-                                    <span class="badge bg-success-subtle text-success">فعال</span>
+                                    <span class="status-pill online"><span class="pulse-dot"></span>فعال</span>
                                 {% else %}
-                                    <span class="badge bg-secondary-subtle text-secondary">غیرفعال</span>
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill">خاموش</span>
                                 {% endif %}
                             </td>
                             <td>
                                 {% if server[12] %}
-                                    <span class="badge bg-danger-subtle text-danger">
-                                        <i class="fas fa-ban me-1"></i>مسدود (اتمام ترافیک)
-                                    </span>
+                                    <span class="status-pill suspended"><i class="fas fa-ban"></i>مسدود</span>
                                 {% else %}
-                                    <span class="badge bg-success-subtle text-success">
-                                        <i class="fas fa-link me-1"></i>متصل
-                                    </span>
+                                    <span class="badge bg-success-subtle text-success rounded-pill"><i class="fas fa-link me-1"></i>متصل</span>
                                 {% endif %}
                             </td>
                             <td class="text-end">
-                                <div class="d-flex flex-column gap-2 align-items-end">
-                                    <form method="POST" action="{{ url_for('manage_servers') }}" class="w-100">
-                                        <input type="hidden" name="edit_server_id" value="{{ server[0] }}">
-                                        <div class="row g-1 align-items-center">
-                                            <div class="col-6 col-lg-3">
-                                                <input type="text" name="name" value="{{ server[1] }}" class="form-control form-control-sm" placeholder="نام" required>
-                                            </div>
-                                            <div class="col-6 col-lg-3">
-                                                <input type="text" name="ip" value="{{ server[2] }}" class="form-control form-control-sm" placeholder="IP" required>
-                                            </div>
-                                            <div class="col-6 col-lg-2">
-                                                <input type="text" name="username" value="{{ server[3] }}" class="form-control form-control-sm" placeholder="SSH User" required>
-                                            </div>
-                                            <div class="col-6 col-lg-2">
-                                                <input type="password" name="password" class="form-control form-control-sm" placeholder="پسورد جدید">
-                                            </div>
-                                            <div class="col-6 col-lg-1">
-                                                <input type="number" name="traffic_limit" value="{{ server[5] }}" class="form-control form-control-sm" placeholder="حد">
-                                            </div>
-                                            <div class="col-6 col-lg-1">
-                                                <input type="text" name="telegram_chat_id" value="{{ server[6] or '' }}" class="form-control form-control-sm" placeholder="Chat ID">
-                                            </div>
-                                            <div class="col-12 col-lg-auto text-end mt-1 mt-lg-0">
-                                                <button type="submit" class="btn btn-primary btn-sm rounded-pill">
-                                                    <i class="fas fa-save me-1"></i>
-                                                    ذخیره
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </form>
-
-                                    {% if session.get('role') == 'owner' %}
-                                    <form method="POST"
-                                          action="{{ url_for('update_server_limit', server_id=server[0]) }}"
-                                          class="limit-inline-form">
-                                        <input type="number"
-                                               step="0.1"
-                                               min="0"
-                                               name="traffic_limit"
-                                               value="{{ server[5] or '' }}"
-                                               class="form-control form-control-sm"
-                                               placeholder="حد (GiB)">
-                                        <button type="submit" class="btn btn-glass-limit btn-sm">
-                                            <i class="fas fa-sliders"></i>
-                                            تغییر حد ترافیک
-                                        </button>
-                                    </form>
+                                <div class="d-flex flex-wrap gap-1 justify-content-end">
+                                    <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill" title="مانیتور زنده">
+                                        <i class="fas fa-chart-line"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-light rounded-pill"
+                                            data-bs-toggle="modal" data-bs-target="#editServerModal"
+                                            onclick="openEditModal({{ server[0] }}, '{{ server[1]|e }}', '{{ server[2]|e }}', '{{ server[3]|e }}', '{{ server[5] or 0 }}', '{{ (server[6] or '')|e }}')"
+                                            title="ویرایش">
+                                        <i class="fas fa-pen"></i>
+                                    </button>
+                                    <a href="{{ url_for('change_ip_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill" title="تنظیمات آی‌پی">
+                                        <i class="fas fa-network-wired"></i>
+                                    </a>
+                                    {% if server[10] and server[11] %}
+                                    <a href="{{ url_for('snapshots_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill" title="اسنپ‌شات‌ها">
+                                        <i class="fas fa-camera"></i>
+                                    </a>
+                                    <a href="{{ url_for('toggle_network_action', server_id=server[0]) }}" class="btn btn-sm {% if server[12] %}btn-outline-success{% else %}btn-outline-warning{% endif %} rounded-pill" title="{% if server[12] %}آزادسازی پورت{% else %}ساسپند پورت{% endif %}">
+                                        <i class="fas {% if server[12] %}fa-unlock{% else %}fa-ban{% endif %}"></i>
+                                    </a>
+                                    <a href="{{ url_for('rebuild_vm_action', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از ریبیلد کامل ماشین مجازی در ESXi مطمئنید؟')" title="ریبیلد">
+                                        <i class="fas fa-redo"></i>
+                                    </a>
                                     {% endif %}
-
-                                    <div class="d-flex flex-wrap gap-1 justify-content-end">
-                                        {% if server[10] and server[11] %}
-                                        <a href="{{ url_for('snapshots_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-primary rounded-pill">
-                                            <i class="fas fa-camera me-1"></i>
-                                            اسنپ‌شات‌ها
-                                        </a>
-                                        <a href="{{ url_for('toggle_network_action', server_id=server[0]) }}" class="btn btn-sm {% if server[12] %}btn-outline-success{% else %}btn-outline-warning{% endif %} rounded-pill">
-                                            <i class="fas fa-network-wired me-1"></i>
-                                            {% if server[12] %}آزاد‌سازی پورت{% else %}ساسپند پورت{% endif %}
-                                        </a>
-                                        <a href="{{ url_for('rebuild_vm_action', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از ریبیلد کامل ماشین مجازی در ESXi مطمئنید؟')">
-                                            <i class="fas fa-redo me-1"></i>
-                                            ریبیلد
-                                        </a>
-                                        {% endif %}
-                                        
-                                        <a href="{{ url_for('change_ip_page', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
-                                            <i class="fas fa-sliders-h me-1"></i>
-                                            تنظیمات آی‌پی
-                                        </a>
-                                        <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-secondary rounded-pill">
-                                            <i class="fas fa-power-off me-1"></i>
-                                            {% if server[7] %}خاموش{% else %}روشن{% endif %}
-                                        </a>
-                                        <a href="{{ url_for('reset_traffic', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill">
-                                            <i class="fas fa-sync me-1"></i>
-                                            ریست ترافیک
-                                        </a>
-                                        <a href="{{ url_for('live_port', server_id=server[0]) }}" class="btn btn-sm btn-outline-light rounded-pill">
-                                            <i class="fas fa-chart-line me-1"></i>
-                                            مانیتور
-                                        </a>
-                                    </div>
+                                    <a href="{{ url_for('reset_traffic', server_id=server[0]) }}" class="btn btn-sm btn-outline-info rounded-pill" title="ریست ترافیک">
+                                        <i class="fas fa-sync"></i>
+                                    </a>
+                                    <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-secondary rounded-pill" title="خاموش/روشن">
+                                        <i class="fas fa-power-off"></i>
+                                    </a>
+                                    <a href="{{ url_for('delete_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این سرور از پنل مطمئنید؟ (آی‌پی آن در بانک آزاد می‌شود)')" title="حذف سرور">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
                                 </div>
                             </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-5">هنوز سروری ثبت نشده است.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -192,16 +137,73 @@
             </div>
         </div>
     </div>
+</div>
 
-    <div class="d-flex flex-wrap gap-2 mt-2">
-        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light">
-            <i class="fas fa-arrow-right-long me-2"></i>
-            بازگشت به پنل مدیریت
-        </a>
-        <a href="{{ url_for('logout') }}" class="btn btn-danger">
-            <i class="fas fa-sign-out-alt me-2"></i>
-            خروج از حساب
-        </a>
+<!-- Edit Server Modal -->
+<div class="modal fade" id="editServerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background-color: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary);">
+            <div class="modal-header border-bottom" style="border-color: var(--border-subtle) !important;">
+                <h5 class="modal-title fw-bold"><i class="fas fa-pen text-primary me-2"></i>ویرایش اطلاعات سرور</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('manage_servers') }}">
+                <div class="modal-body d-flex flex-column gap-3">
+                    <input type="hidden" name="edit_server_id" id="modal_srv_id">
+                    <div>
+                        <label class="form-label">نام سرور</label>
+                        <input type="text" name="name" id="modal_srv_name" class="form-control" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">آدرس IP</label>
+                            <input type="text" name="ip" id="modal_srv_ip" class="form-control font-mono" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">کاربر SSH</label>
+                            <input type="text" name="username" id="modal_srv_user" class="form-control font-mono" required>
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label class="form-label">رمز عبور جدید SSH (اختیاری)</label>
+                            <input type="password" name="password" class="form-control" placeholder="بدون تغییر">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">سقف ترافیک (GiB)</label>
+                            <input type="number" step="0.1" name="traffic_limit" id="modal_srv_limit" class="form-control">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">چت آیدی تلگرام</label>
+                        <input type="text" name="telegram_chat_id" id="modal_srv_chat" class="form-control font-mono">
+                    </div>
+                </div>
+                <div class="modal-footer border-top" style="border-color: var(--border-subtle) !important;">
+                    <button type="button" class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4"><i class="fas fa-save me-1"></i>ذخیره تغییرات</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+
+<script>
+function openEditModal(id, name, ip, user, limit, chat) {
+    document.getElementById('modal_srv_id').value = id;
+    document.getElementById('modal_srv_name').value = name;
+    document.getElementById('modal_srv_ip').value = ip;
+    document.getElementById('modal_srv_user').value = user;
+    document.getElementById('modal_srv_limit').value = limit;
+    document.getElementById('modal_srv_chat').value = chat;
+}
+
+function filterServersTable() {
+    const q = (document.getElementById('serverSearchInput').value || '').toLowerCase();
+    document.querySelectorAll('#serversTable .server-row').forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(q) ? '' : 'none';
+    });
+}
+</script>
 {% endblock %}
