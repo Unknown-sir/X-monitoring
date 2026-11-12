@@ -241,6 +241,33 @@ def init_db():
             notified INTEGER DEFAULT 0
         )"""
     )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS vps_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            name_fa TEXT,
+            name_en TEXT,
+            cpus INTEGER DEFAULT 1,
+            ram_gb INTEGER DEFAULT 2,
+            disk_gb INTEGER DEFAULT 20,
+            traffic_gib REAL DEFAULT 1000,
+            price_toman INTEGER DEFAULT 1190000,
+            badge TEXT DEFAULT NULL,
+            active INTEGER DEFAULT 1
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS web_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            subject TEXT,
+            message TEXT,
+            admin_reply TEXT DEFAULT NULL,
+            status TEXT DEFAULT 'open',
+            created_at TEXT
+        )"""
+    )
 
     c.execute("PRAGMA table_info(servers)")
     cols = [info[1] for info in c.fetchall()]
@@ -257,6 +284,10 @@ def init_db():
         ("ipv6_gateway", "TEXT DEFAULT NULL"),
         ("extra_ips", "TEXT DEFAULT NULL"),
         ("mac_address", "TEXT DEFAULT NULL"),
+        ("plan_name", "TEXT DEFAULT NULL"),
+        ("cpus", "INTEGER DEFAULT 2"),
+        ("ram_mb", "INTEGER DEFAULT 2048"),
+        ("disk_gb", "INTEGER DEFAULT 20"),
     ]
     for col_name, col_type in needed_cols:
         if col_name not in cols:
@@ -266,7 +297,28 @@ def init_db():
             except Exception as e:
                 logging.error(f"Error adding column {col_name}: {e}")
 
-    default_admin_chat = ADMIN_CHAT_ID if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "YOUR_CHAT_ID" else ""
+        c.execute("PRAGMA table_info(users)")
+    ucols = [info[1] for info in c.fetchall()]
+    if "wallet_balance" not in ucols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN wallet_balance INTEGER DEFAULT 0")
+        except Exception:
+            pass
+
+    default_plans = [
+        ("bronze", "سرویس برنزی", "Bronze VPS", 1, 2, 20, 1000, 1190000, "اقتصادی", 1),
+        ("silver", "سرویس نقره‌ای", "Silver VPS", 2, 2, 20, 1500, 1450000, "محبوب", 1),
+        ("gold", "سرویس طلایی", "Gold VPS", 4, 4, 20, 2000, 2450000, "پرفروش‌ترین", 1),
+        ("platinum", "سرویس پلاتینیوم", "Platinum VPS", 6, 6, 20, 3000, 3390000, "حرفه‌ای", 1),
+    ]
+    for dp in default_plans:
+        c.execute(
+            "INSERT OR IGNORE INTO vps_plans (code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            dp,
+        )
+
+    default_admin_chat = ADMIN_CHAT_ID if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "" 
     c.execute(
         "INSERT OR IGNORE INTO users (username, password, role, telegram_chat_id, active) VALUES (?, ?, ?, ?, ?)",
         ("marmmr", generate_password_hash(OWNER_PASSWORD), "owner", default_admin_chat, 1),
@@ -432,8 +484,61 @@ def startup_check():
     return True
 
 
+@app.context_processor
+def inject_user_wallet():
+    balance = 0
+    if "user_id" in session:
+        try:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
+            row = c.fetchone()
+            conn.close()
+            if row and row[0] is not None:
+                balance = int(row[0])
+        except Exception:
+            balance = 0
+    return {"user_wallet": balance, "brand_name": "کلود کیوب", "brand_en": "Cloud Cube"}
+
+
+def get_active_plans():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active "
+        "FROM vps_plans WHERE active=1 ORDER BY price_toman ASC"
+    )
+    plans = [
+        {
+            "id": r[0],
+            "code": r[1],
+            "name_fa": r[2],
+            "name_en": r[3],
+            "cpus": r[4],
+            "ram_gb": r[5],
+            "disk_gb": r[6],
+            "traffic_gib": r[7],
+            "price_toman": r[8],
+            "badge": r[9],
+            "active": bool(r[10]),
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return plans
+
+
 @app.route("/", methods=["GET", "POST"])
+def landing():
+    if request.method == "POST":
+        return login()
+    plans = get_active_plans()
+    return render_template("landing.html", plans=plans)
+
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
+    error_msg = None
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -452,15 +557,46 @@ def login():
             logging.info(f"کاربر {username} وارد شد.")
             return redirect(url_for("dashboard"))
         conn.close()
-        return "نام کاربری یا رمز عبور اشتباه است!", 401
-    return render_template("login.html")
+        error_msg = "نام کاربری یا رمز عبور اشتباه است!"
+    return render_template("login.html", error_msg=error_msg)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    error_msg = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
+        if len(username) < 3 or len(password) < 4:
+            error_msg = "نام کاربری باید حداقل ۳ کاراکتر و رمز عبور حداقل ۴ کاراکتر باشد."
+        else:
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE username=?", (username,))
+            if c.fetchone():
+                conn.close()
+                error_msg = "این نام کاربری قبلاً ثبت شده است."
+            else:
+                c.execute(
+                    "INSERT INTO users (username, password, role, telegram_chat_id, active, wallet_balance) VALUES (?, ?, 'user', ?, 1, 0)",
+                    (username, generate_password_hash(password), telegram_chat_id),
+                )
+                uid = c.lastrowid
+                conn.commit()
+                conn.close()
+                session["user_id"] = uid
+                session["username"] = username
+                session["role"] = "user"
+                return redirect(url_for("dashboard"))
+    return render_template("register.html", error_msg=error_msg)
 
 
 @app.route("/logout")
 @login_required
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("landing"))
 
 
 @app.route("/profile", methods=["GET", "POST"])
@@ -502,25 +638,497 @@ def dashboard():
     c = conn.cursor()
     if session["role"] in ["admin", "owner"]:
         c.execute(
-            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid FROM servers WHERE active=1 ORDER BY name ASC"
+            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid, active, plan_name, cpus, ram_mb, disk_gb "
+            "FROM servers ORDER BY id DESC"
         )
     else:
         c.execute(
-            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid FROM servers s "
-            "JOIN user_servers us ON s.id = us.server_id "
-            "WHERE us.user_id=? AND s.active=1 ORDER BY s.name ASC",
+            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid, s.active, s.plan_name, s.cpus, s.ram_mb, s.disk_gb "
+            "FROM servers s JOIN user_servers us ON s.id = us.server_id "
+            "WHERE us.user_id=? ORDER BY s.id DESC",
             (session["user_id"],),
         )
     servers = c.fetchall()
     conn.close()
+    plans = get_active_plans()
 
     return render_template(
         "dashboard.html",
         servers=servers,
+        plans=plans,
         role=session["role"],
         time_left=time_left,
         is_trial=is_trial,
     )
+
+
+@app.route("/wallet", methods=["GET", "POST"])
+@login_required
+def wallet_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    msg = None
+    if request.method == "POST":
+        try:
+            amount = int(request.form.get("amount", 0) or 0)
+        except ValueError:
+            amount = 0
+        if amount > 0:
+            c.execute("UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + ? WHERE id=?", (amount, session["user_id"]))
+            now_iso = datetime.datetime.utcnow().isoformat()
+            c.execute(
+                "INSERT INTO events (server_id, level, message, created_at) VALUES (NULL, 'info', ?, ?)",
+                (f"افزایش موجودی کیف پول کاربر {session.get('username')} به مبلغ {amount:,} تومان.", now_iso),
+            )
+            conn.commit()
+            msg = f"کیف پول شما به مبلغ {amount:,} تومان با موفقیت شارژ شد."
+    c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
+    row = c.fetchone()
+    balance = int(row[0] or 0) if row else 0
+    conn.close()
+    return render_template("wallet.html", wallet_balance=balance, message=msg)
+
+
+@app.route("/order_vps", methods=["GET", "POST"])
+@login_required
+def order_vps_page():
+    plans = get_active_plans()
+    selected_code = request.args.get("plan", "gold")
+    error_msg = None
+
+    if request.method == "POST":
+        plan_id = int(request.form.get("plan_id", 0) or 0)
+        vm_label = request.form.get("vm_name", "").strip()
+        root_password = request.form.get("root_password", "").strip()
+
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman FROM vps_plans WHERE id=? AND active=1",
+            (plan_id,),
+        )
+        plan_row = c.fetchone()
+        c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
+        u_row = c.fetchone()
+        balance = int(u_row[0] or 0) if u_row else 0
+
+        if not plan_row:
+            conn.close()
+            error_msg = "پلن انتخاب‌شده معتبر نیست."
+        elif len(root_password) < 6:
+            conn.close()
+            error_msg = "رمز عبور سرور باید حداقل ۶ کاراکتر باشد."
+        elif session.get("role") not in ["admin", "owner"] and balance < plan_row[7]:
+            conn.close()
+            error_msg = f"موجودی کیف پول شما کافی نیست (مبلغ پلن: {plan_row[7]:,} تومان). لطفاً ابتدا از بخش کیف پول حساب خود را شارژ کنید."
+        else:
+            _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman = plan_row
+            ram_mb = int(ram_gb) * 1024
+            clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label) or f"cc-{p_code}-{int(time.time()) % 10000}"
+
+            # Find first free IP in ip_pool
+            c.execute(
+                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+            )
+            pool_row = c.fetchone()
+            if pool_row:
+                pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = pool_row
+            else:
+                pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = (
+                    None,
+                    "در انتظار تخصیص IP",
+                    "25",
+                    "185.42.212.129",
+                    "",
+                    "",
+                    "",
+                )
+
+            # Find first ESXi host if registered
+            c.execute("SELECT id, ip, port, username, password, default_datastore, default_network, template_vmdk FROM esxi_hosts ORDER BY id ASC LIMIT 1")
+            esxi_row = c.fetchone()
+            esxi_host_id = esxi_row[0] if esxi_row else None
+            vmid = None
+
+            if esxi_row and pool_row:
+                netplan_yaml = esxi_manager.generate_netplan_yaml(
+                    primary_ipv4=primary_ip,
+                    gateway_ipv4=gateway,
+                    netmask_or_prefix=netmask or "25",
+                    ipv6=ipv6,
+                    ipv6_gateway=ipv6_gw,
+                )
+                meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
+                    vm_name=clean_name,
+                    ssh_user="root",
+                    ssh_password=root_password,
+                    netplan_yaml=netplan_yaml,
+                )
+                seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
+                ok, created_vmid, _ = esxi_manager.create_vm_on_esxi(
+                    esxi_host=esxi_row[1],
+                    esxi_port=esxi_row[2],
+                    esxi_user=esxi_row[3],
+                    esxi_password=esxi_row[4],
+                    vm_name=clean_name,
+                    cpus=cpus,
+                    ram_mb=ram_mb,
+                    disk_gb=disk_gb,
+                    datastore=esxi_row[5],
+                    template_vmdk=esxi_row[7],
+                    network_name=esxi_row[6],
+                    mac_address=mac_addr,
+                    seed_iso_bytes=seed_iso,
+                )
+                if ok:
+                    vmid = created_vmid
+
+            if session.get("role") not in ["admin", "owner"]:
+                c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (price_toman, session["user_id"]))
+
+            now_iso = datetime.datetime.utcnow().isoformat()
+            c.execute(
+                """INSERT INTO servers (
+                    name, ip, username, password, traffic_limit, active, traffic_usage,
+                    updated_at, esxi_host_id, vmid, vm_name, is_suspended,
+                    netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb
+                ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    clean_name,
+                    primary_ip,
+                    root_password,
+                    traffic_gib,
+                    now_iso,
+                    esxi_host_id,
+                    vmid,
+                    clean_name,
+                    netmask,
+                    gateway,
+                    ipv6,
+                    ipv6_gw,
+                    mac_addr,
+                    p_name_fa,
+                    cpus,
+                    ram_mb,
+                    disk_gb,
+                ),
+            )
+            srv_id = c.lastrowid
+            if pool_id:
+                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (srv_id, pool_id))
+            c.execute("INSERT OR IGNORE INTO user_servers (user_id, server_id) VALUES (?, ?)", (session["user_id"], srv_id))
+            c.execute(
+                "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+                (srv_id, f"سفارش {p_name_fa} ({clean_name}) توسط {session.get('username')} ثبت و تحویل شد.", now_iso),
+            )
+            conn.commit()
+            conn.close()
+            invalidate_servers_cache()
+            return redirect(url_for("dashboard"))
+
+    return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg)
+
+
+@app.route("/server/<int:server_id>/power/<action>", methods=["POST"])
+@login_required
+def user_power_action(server_id, action):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+    if action not in ["on", "off", "reboot"]:
+        return redirect(url_for("dashboard"))
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT s.ip, s.username, s.password, s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password "
+        "FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row:
+        srv_ip, ssh_u, ssh_p, vmid, host_id, esxi_ip, esxi_port, esxi_u, esxi_p = row
+        if host_id and vmid and esxi_ip:
+            esxi_manager.power_vm(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, "reset" if action == "reboot" else action)
+        elif action in ["reboot", "off"] and srv_ip:
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(srv_ip, username=ssh_u, password=ssh_p, timeout=8)
+                ssh.exec_command("sudo reboot" if action == "reboot" else "sudo shutdown -h now")
+                ssh.close()
+            except Exception:
+                pass
+        if action in ["on", "off"]:
+            c.execute("UPDATE servers SET active=? WHERE id=?", (1 if action == "on" else 0, server_id))
+            conn.commit()
+            invalidate_servers_cache()
+    conn.close()
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/server/<int:server_id>/user_rebuild", methods=["POST"])
+@login_required
+def user_rebuild_action(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    new_pass = request.form.get("new_password", "").strip()
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.vm_name, s.vmid, s.esxi_host_id, s.ip, s.netmask, s.gateway, s.ipv6, s.ipv6_gateway, s.extra_ips,
+                  s.username, s.password, h.ip, h.port, h.username, h.password, h.default_datastore, h.template_vmdk
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row:
+        (
+            vm_name, vmid, host_id, srv_ip, netmask, gateway, ipv6, ipv6_gw, extra_ips,
+            ssh_user, ssh_pass, esxi_ip, esxi_port, esxi_user, esxi_pass, datastore, template
+        ) = row
+        final_pass = new_pass if len(new_pass) >= 6 else ssh_pass
+        if new_pass and len(new_pass) >= 6:
+            c.execute("UPDATE servers SET password=? WHERE id=?", (final_pass, server_id))
+
+        if host_id and vmid and esxi_ip and template:
+            extra_list = [x.strip() for x in re.split(r"[,\n]", extra_ips or "") if x.strip()]
+            netplan_yaml = esxi_manager.generate_netplan_yaml(
+                primary_ipv4=srv_ip,
+                gateway_ipv4=gateway or "185.42.212.129",
+                netmask_or_prefix=netmask or "25",
+                extra_ips=extra_list,
+                ipv6=ipv6,
+                ipv6_gateway=ipv6_gw,
+            )
+            meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
+                vm_name=vm_name or f"vm-{server_id}",
+                ssh_user=ssh_user or "root",
+                ssh_password=final_pass,
+                netplan_yaml=netplan_yaml,
+            )
+            seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
+            esxi_manager.rebuild_vm_on_esxi(
+                esxi_host=esxi_ip,
+                esxi_port=esxi_port,
+                esxi_user=esxi_user,
+                esxi_password=esxi_pass,
+                vmid=vmid,
+                vm_name=vm_name,
+                datastore=datastore,
+                template_vmdk=template,
+                seed_iso_bytes=seed_iso,
+            )
+        now_iso = datetime.datetime.utcnow().isoformat()
+        c.execute(
+            "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+            (server_id, f"ریبیلد خودکار اوبونتو برای سرور {vm_name or srv_ip} توسط کاربر انجام شد.", now_iso),
+        )
+        conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.route("/server/<int:server_id>/user_ip_service", methods=["GET", "POST"])
+@login_required
+def user_ip_service_page(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    ip_service_fee = 340000
+    conn = get_db_connection()
+    c = conn.cursor()
+    error_msg = None
+    success_msg = None
+
+    c.execute(
+        "SELECT id, name, ip, netmask, gateway, ipv6, ipv6_gateway, extra_ips, username, password FROM servers WHERE id=?",
+        (server_id,),
+    )
+    s_row = c.fetchone()
+    if not s_row:
+        conn.close()
+        return "Server not found", 404
+
+    srv = {
+        "id": s_row[0],
+        "name": s_row[1],
+        "ip": s_row[2],
+        "netmask": s_row[3] or "25",
+        "gateway": s_row[4] or "",
+        "ipv6": s_row[5] or "",
+        "ipv6_gateway": s_row[6] or "",
+        "extra_ips": s_row[7] or "",
+        "username": s_row[8],
+        "password": s_row[9],
+    }
+
+    if request.method == "POST":
+        op_type = request.form.get("op_type", "change_ip")
+        c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
+        u_row = c.fetchone()
+        balance = int(u_row[0] or 0) if u_row else 0
+
+        c.execute(
+            "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+        )
+        free_ip = c.fetchone()
+
+        if session.get("role") not in ["admin", "owner"] and balance < ip_service_fee:
+            error_msg = f"موجودی کیف پول شما برای این عملیات کافی نیست (هزینه: {ip_service_fee:,} تومان)."
+        elif not free_ip:
+            error_msg = "در حال حاضر آی‌پی آزادی در بانک آی‌پی موجود نیست. لطفاً به پشتیبانی تیکت بزنید."
+        else:
+            pool_id, new_ip, new_mask, new_gw, new_v6, new_v6gw = free_ip
+            if session.get("role") not in ["admin", "owner"]:
+                c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (ip_service_fee, session["user_id"]))
+
+            if op_type == "change_ip":
+                old_ip = srv["ip"]
+                c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE ip_address=? AND server_id=?", (old_ip, server_id))
+                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
+                c.execute(
+                    "UPDATE servers SET ip=?, netmask=?, gateway=?, ipv6=?, ipv6_gateway=? WHERE id=?",
+                    (new_ip, new_mask, new_gw, new_v6 or srv["ipv6"], new_v6gw or srv["ipv6_gateway"], server_id),
+                )
+                extra_list = [x.strip() for x in re.split(r"[,\n]", srv["extra_ips"]) if x.strip()]
+                netplan_yaml = esxi_manager.generate_netplan_yaml(
+                    primary_ipv4=new_ip,
+                    gateway_ipv4=new_gw,
+                    netmask_or_prefix=new_mask,
+                    extra_ips=extra_list,
+                    ipv6=new_v6 or srv["ipv6"],
+                    ipv6_gateway=new_v6gw or srv["ipv6_gateway"],
+                )
+                esxi_manager.apply_netplan_to_vm(old_ip, srv["username"], srv["password"], netplan_yaml)
+                srv["ip"] = new_ip
+                srv["netmask"] = new_mask
+                srv["gateway"] = new_gw
+                success_msg = f"آی‌پی اصلی سرور با موفقیت به {new_ip} تغییر یافت و روی سرور اعمال شد."
+            elif op_type == "add_extra_ip":
+                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
+                current_extras = [x.strip() for x in re.split(r"[,\n]", srv["extra_ips"]) if x.strip()]
+                current_extras.append(f"{new_ip}/{new_mask}")
+                updated_extras = ", ".join(current_extras)
+                c.execute("UPDATE servers SET extra_ips=? WHERE id=?", (updated_extras, server_id))
+                netplan_yaml = esxi_manager.generate_netplan_yaml(
+                    primary_ipv4=srv["ip"],
+                    gateway_ipv4=srv["gateway"],
+                    netmask_or_prefix=srv["netmask"],
+                    extra_ips=current_extras,
+                    ipv6=srv["ipv6"],
+                    ipv6_gateway=srv["ipv6_gateway"],
+                )
+                esxi_manager.apply_netplan_to_vm(srv["ip"], srv["username"], srv["password"], netplan_yaml)
+                srv["extra_ips"] = updated_extras
+                success_msg = f"آی‌پی اضافه {new_ip} با موفقیت به سرور متصل و در Netplan فعال شد."
+
+            conn.commit()
+            invalidate_servers_cache()
+
+    conn.close()
+    return render_template(
+        "user_ip_service.html",
+        server=srv,
+        ip_service_fee=ip_service_fee,
+        error_msg=error_msg,
+        success_msg=success_msg,
+    )
+
+
+@app.route("/tickets", methods=["GET", "POST"])
+@login_required
+def tickets_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    if request.method == "POST":
+        subject = request.form.get("subject", "").strip()
+        message = request.form.get("message", "").strip()
+        if subject and message:
+            now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            c.execute(
+                "INSERT INTO web_tickets (user_id, username, subject, message, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
+                (session["user_id"], session.get("username", "User"), subject, message, now_iso),
+            )
+            conn.commit()
+            conn.close()
+            return redirect(url_for("tickets_page"))
+
+    if session.get("role") in ["admin", "owner"]:
+        c.execute("SELECT id, user_id, username, subject, message, admin_reply, status, created_at FROM web_tickets ORDER BY id DESC")
+    else:
+        c.execute(
+            "SELECT id, user_id, username, subject, message, admin_reply, status, created_at FROM web_tickets WHERE user_id=? ORDER BY id DESC",
+            (session["user_id"],),
+        )
+    tickets = [
+        {
+            "id": r[0],
+            "user_id": r[1],
+            "username": r[2],
+            "subject": r[3],
+            "message": r[4],
+            "admin_reply": r[5],
+            "status": r[6],
+            "created_at": r[7],
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template("tickets.html", tickets=tickets)
+
+
+@app.route("/tickets/<int:ticket_id>/reply", methods=["POST"])
+@admin_required
+def reply_web_ticket(ticket_id):
+    reply_text = request.form.get("admin_reply", "").strip()
+    conn = get_db_connection()
+    c = conn.cursor()
+    if reply_text:
+        c.execute("UPDATE web_tickets SET admin_reply=?, status='answered' WHERE id=?", (reply_text, ticket_id))
+        conn.commit()
+    conn.close()
+    return redirect(url_for("tickets_page"))
+
+
+@app.route("/manage_plans", methods=["GET", "POST"])
+@admin_required
+def manage_plans_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    if request.method == "POST":
+        plan_id = request.form.get("plan_id")
+        name_fa = request.form.get("name_fa", "").strip()
+        cpus = int(request.form.get("cpus", 1) or 1)
+        ram_gb = int(request.form.get("ram_gb", 2) or 2)
+        disk_gb = int(request.form.get("disk_gb", 20) or 20)
+        traffic_gib = float(request.form.get("traffic_gib", 1000) or 1000)
+        price_toman = int(request.form.get("price_toman", 1190000) or 1190000)
+        if plan_id:
+            c.execute(
+                "UPDATE vps_plans SET name_fa=?, cpus=?, ram_gb=?, disk_gb=?, traffic_gib=?, price_toman=? WHERE id=?",
+                (name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman, int(plan_id)),
+            )
+            conn.commit()
+    c.execute("SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active FROM vps_plans ORDER BY price_toman ASC")
+    plans = [
+        {
+            "id": r[0],
+            "code": r[1],
+            "name_fa": r[2],
+            "name_en": r[3],
+            "cpus": r[4],
+            "ram_gb": r[5],
+            "disk_gb": r[6],
+            "traffic_gib": r[7],
+            "price_toman": r[8],
+            "badge": r[9],
+            "active": bool(r[10]),
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template("manage_plans.html", plans=plans)
 
 
 @app.route("/admin_dashboard")
@@ -1204,7 +1812,7 @@ def toggle_network_action(server_id):
     return redirect(request.referrer or url_for("manage_servers"))
 
 
-# --- Traffic Recharge (Customer & Admin) ---
+# --- Traffic Recharge (Customer & Admin, 750,000 Toman per 1000 GiB) ---
 @app.route("/server/<int:server_id>/recharge_traffic", methods=["POST"])
 @login_required
 def recharge_traffic_action(server_id):
@@ -1212,8 +1820,20 @@ def recharge_traffic_action(server_id):
         return "Forbidden", 403
 
     add_amount = float(request.form.get("add_amount", 100) or 100)
+    if add_amount <= 0:
+        add_amount = 100.0
+    cost_toman = int(add_amount * 750)  # 750,000 Tomans per 1000 GiB (1 TB)
+
     conn = get_db_connection()
     c = conn.cursor()
+    if session.get("role") not in ["admin", "owner"]:
+        c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
+        u_row = c.fetchone()
+        balance = int(u_row[0] or 0) if u_row else 0
+        if balance < cost_toman:
+            conn.close()
+            return redirect(url_for("wallet_page"))
+
     c.execute(
         """SELECT s.traffic_limit, s.traffic_usage, s.is_suspended, s.vmid, s.name, h.ip, h.port, h.username, h.password
            FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
@@ -1222,6 +1842,8 @@ def recharge_traffic_action(server_id):
     row = c.fetchone()
     if row:
         curr_limit, curr_usage, is_suspended, vmid, srv_name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+        if session.get("role") not in ["admin", "owner"]:
+            c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (cost_toman, session["user_id"]))
         new_limit = (curr_limit or 0.0) + add_amount
         c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
 
@@ -1490,23 +2112,27 @@ def manage_users():
         password = request.form.get("password", "").strip()
         role = request.form.get("role", "user").strip()
         telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
+        try:
+            wallet_balance = int(request.form.get("wallet_balance", 0) or 0)
+        except ValueError:
+            wallet_balance = 0
 
         if role != "owner" and username != "marmmr":
             if password:
                 c.execute(
-                    "UPDATE users SET username=?, password=?, role=?, telegram_chat_id=? WHERE id=?",
-                    (username, generate_password_hash(password), role, telegram_chat_id, user_id),
+                    "UPDATE users SET username=?, password=?, role=?, telegram_chat_id=?, wallet_balance=? WHERE id=?",
+                    (username, generate_password_hash(password), role, telegram_chat_id, wallet_balance, user_id),
                 )
             else:
                 c.execute(
-                    "UPDATE users SET username=?, role=?, telegram_chat_id=? WHERE id=?",
-                    (username, role, telegram_chat_id, user_id),
+                    "UPDATE users SET username=?, role=?, telegram_chat_id=?, wallet_balance=? WHERE id=?",
+                    (username, role, telegram_chat_id, wallet_balance, user_id),
                 )
             conn.commit()
         conn.close()
         return redirect(url_for("manage_users"))
 
-    c.execute("SELECT id, username, role, telegram_chat_id, active FROM users WHERE username != 'marmmr'")
+    c.execute("SELECT id, username, role, telegram_chat_id, active, COALESCE(wallet_balance, 0) FROM users WHERE username != 'marmmr'")
     users = c.fetchall()
     conn.close()
     return render_template("manage_users.html", users=users)

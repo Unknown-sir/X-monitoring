@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}مدیریت کاربران | XMonitor{% endblock %}
+{% block title %}مدیریت کاربران و کیف پول | کلود کیوب{% endblock %}
 {% block content %}
 <div class="manage-section">
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-            <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
+            <h2 class="fw-extrabold mb-1 d-flex align-items-center gap-2" style="font-size: 1.35rem;">
                 <i class="fas fa-users text-primary"></i>
-                مدیریت کاربران پنل
+                <span>مدیریت مشتریان و موجودی کیف پول</span>
             </h2>
             <p class="text-muted mb-0 small">
-                مشاهده، ویرایش نقش، تغییر رمز عبور و وضعیت دسترسی مشتریان و مدیران
+                مشاهده، ویرایش نقش، شارژ کیف پول، تغییر رمز عبور و وضعیت دسترسی مشتریان کلود کیوب
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -31,31 +31,31 @@
                 <div class="card-body d-flex flex-column gap-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="d-flex align-items-center gap-2">
-                            <span class="stat-icon bg-primary-subtle text-primary" style="width:38px;height:38px;">
+                            <span class="stat-icon bg-primary-subtle text-primary" style="width:40px;height:40px;">
                                 <i class="fas fa-user"></i>
                             </span>
                             <div>
                                 <div class="fw-bold">{{ user[1] }}</div>
-                                <div class="small text-muted font-mono">ID: #{{ user[0] }}</div>
+                                <div class="small text-gold font-mono">کیف پول: {{ "{:,}".format(user[5]|default(0)) }} تومان</div>
                             </div>
                         </div>
                         <div class="d-flex flex-column align-items-end gap-1">
                             {% if user[2] == 'owner' %}
                                 <span class="badge bg-purple rounded-pill">Owner</span>
                             {% elif user[2] == 'admin' %}
-                                <span class="badge bg-info-subtle text-info rounded-pill">Admin</span>
+                                <span class="badge bg-gold rounded-pill">Admin</span>
                             {% else %}
-                                <span class="badge bg-secondary-subtle text-secondary rounded-pill">User</span>
+                                <span class="badge bg-primary-subtle rounded-pill">مشتری</span>
                             {% endif %}
                             {% if user[4] %}
-                                <span class="badge bg-success-subtle text-success rounded-pill">فعال</span>
+                                <span class="badge bg-success-subtle rounded-pill">فعال</span>
                             {% else %}
-                                <span class="badge bg-danger-subtle text-danger rounded-pill">غیرفعال</span>
+                                <span class="badge bg-danger-subtle rounded-pill">غیرفعال</span>
                             {% endif %}
                         </div>
                     </div>
 
-                    <form method="POST" action="{{ url_for('manage_users') }}" class="d-flex flex-column gap-2 mt-auto pt-2 border-top" style="border-color: var(--border-subtle) !important;">
+                    <form method="POST" action="{{ url_for('manage_users') }}" class="d-flex flex-column gap-2 mt-auto pt-2 border-top">
                         <input type="hidden" name="edit_user_id" value="{{ user[0] }}">
                         <div class="row g-2">
                             <div class="col-6">
@@ -65,25 +65,29 @@
                             <div class="col-6">
                                 <label class="form-label mb-1">نقش</label>
                                 <select name="role" class="form-select form-select-sm" required>
-                                    <option value="user" {% if user[2] == 'user' %}selected{% endif %}>User</option>
-                                    <option value="admin" {% if user[2] == 'admin' %}selected{% endif %}>Admin</option>
+                                    <option value="user" {% if user[2] == 'user' %}selected{% endif %}>User (مشتری)</option>
+                                    <option value="admin" {% if user[2] == 'admin' %}selected{% endif %}>Admin (مدیر)</option>
                                 </select>
                             </div>
                         </div>
                         <div class="row g-2">
                             <div class="col-6">
+                                <label class="form-label mb-1">موجودی کیف پول (تومان)</label>
+                                <input type="number" name="wallet_balance" value="{{ user[5]|default(0) }}" class="form-control form-control-sm font-mono text-gold">
+                            </div>
+                            <div class="col-6">
                                 <label class="form-label mb-1">رمز عبور جدید</label>
                                 <input type="password" name="password" placeholder="بدون تغییر" class="form-control form-control-sm">
                             </div>
-                            <div class="col-6">
-                                <label class="form-label mb-1">چت آیدی تلگرام</label>
-                                <input type="text" name="telegram_chat_id" value="{{ user[3] or '' }}" class="form-control form-control-sm font-mono">
-                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label mb-1">چت آیدی تلگرام</label>
+                            <input type="text" name="telegram_chat_id" value="{{ user[3] or '' }}" class="form-control form-control-sm font-mono">
                         </div>
                         <div class="d-flex flex-wrap gap-2 justify-content-between mt-2 pt-1">
                             <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3">
                                 <i class="fas fa-save me-1"></i>
-                                ذخیره
+                                ذخیره تغییرات
                             </button>
                             <div class="d-flex gap-1">
                                 <a href="{{ url_for('toggle_user', user_id=user[0]) }}" class="btn btn-sm btn-outline-warning rounded-pill">
@@ -98,10 +102,6 @@
                     </form>
                 </div>
             </div>
-        </div>
-        {% else %}
-        <div class="col-12">
-            <div class="card p-5 text-center text-muted">هیچ کاربری ثبت نشده است.</div>
         </div>
         {% endfor %}
     </div>

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}مدیریت پلن‌ها و تعرفه‌های فروش | کلود کیوب{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="fw-extrabold mb-1" style="font-size: 1.35rem;"><i class="fas fa-tags text-gold me-1"></i> مدیریت پلن‌ها و تعرفه‌های فروش کلود کیوب</h2>
+        <p class="text-muted small mb-0">ویرایش مشخصات سخت‌افزاری، سقف ترافیک و قیمت پلن‌های نمایش داده شده در سایت و پنل مشتریان</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    {% for plan in plans %}
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card p-3 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="badge bg-gold">{{ plan.name_en }}</span>
+                <span class="font-mono small text-muted">کد: {{ plan.code }}</span>
+            </div>
+            <form method="POST" action="{{ url_for('manage_plans_page') }}" class="d-flex flex-column gap-2">
+                <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                <div>
+                    <label class="form-label">عنوان فارسی پلن</label>
+                    <input type="text" name="name_fa" value="{{ plan.name_fa }}" class="form-control form-control-sm" required>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">تعداد هسته CPU</label>
+                        <input type="number" name="cpus" value="{{ plan.cpus }}" class="form-control form-control-sm font-mono" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">رم (GB)</label>
+                        <input type="number" name="ram_gb" value="{{ plan.ram_gb }}" class="form-control form-control-sm font-mono" required>
+                    </div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">دیسک SSD (GB)</label>
+                        <input type="number" name="disk_gb" value="{{ plan.disk_gb }}" class="form-control form-control-sm font-mono" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">ترافیک (GiB)</label>
+                        <input type="number" name="traffic_gib" value="{{ plan.traffic_gib|int }}" class="form-control form-control-sm font-mono" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">قیمت ماهانه (تومان)</label>
+                    <input type="number" name="price_toman" value="{{ plan.price_toman }}" class="form-control form-control-sm font-mono text-gold fw-bold" required>
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary rounded-pill mt-2">
+                    <i class="fas fa-save"></i> ذخیره تغییرات پلن
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

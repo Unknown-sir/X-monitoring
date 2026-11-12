@@ -20,6 +20,21 @@ class EsxiHost(Base):
     servers: Mapped[list["Server"]] = relationship(back_populates="esxi_host")
 
 
+class VpsPlan(Base):
+    __tablename__ = "vps_plans"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True)
+    name_fa: Mapped[str] = mapped_column(String(120))
+    name_en: Mapped[str] = mapped_column(String(120))
+    cpus: Mapped[int] = mapped_column(Integer, default=1)
+    ram_gb: Mapped[int] = mapped_column(Integer, default=2)
+    disk_gb: Mapped[int] = mapped_column(Integer, default=20)
+    traffic_gib: Mapped[float] = mapped_column(Float, default=1000.0)
+    price_toman: Mapped[int] = mapped_column(Integer, default=1190000)
+    badge: Mapped[str] = mapped_column(String(64), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class IpPool(Base):
     __tablename__ = "ip_pool"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -60,6 +75,10 @@ class Server(Base):
     ipv6_gateway: Mapped[str] = mapped_column(String(128), nullable=True)
     extra_ips: Mapped[str] = mapped_column(Text, nullable=True)
     mac_address: Mapped[str] = mapped_column(String(32), nullable=True)
+    plan_name: Mapped[str] = mapped_column(String(64), nullable=True)
+    cpus: Mapped[int] = mapped_column(Integer, default=2)
+    ram_mb: Mapped[int] = mapped_column(Integer, default=2048)
+    disk_gb: Mapped[int] = mapped_column(Integer, default=20)
 
     esxi_host: Mapped["EsxiHost"] = relationship(back_populates="servers")
     samples: Mapped[list["TrafficSample"]] = relationship(back_populates="server", cascade="all,delete-orphan")
