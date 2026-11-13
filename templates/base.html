@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6.0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -19,7 +19,7 @@
 
 <div class="xm-layout">
     <aside class="xm-sidebar" id="appSidebar">
-        <a href="{{ url_for('dashboard') }}" class="xm-sidebar-header">
+        <a href="{{ url_for('dashboard') if has_perm('client_dashboard') else url_for('admin_tickets_page') }}" class="xm-sidebar-header">
             <span class="xm-logo-badge">
                 <i class="fas fa-cube"></i>
             </span>
@@ -30,34 +30,20 @@
         </a>
 
         <nav class="xm-sidebar-nav">
-            <div class="xm-nav-group">پنل کاربری</div>
-            <a href="{{ url_for('dashboard') }}" class="xm-nav-item {% if request.endpoint in ['dashboard', 'live_port', 'user_ip_service_page', 'snapshots_page'] %}active{% endif %}">
-                <i class="fas fa-layer-group text-primary"></i>
-                <span>سرویس‌ها و نمودار مصرف</span>
-            </a>
-            <a href="{{ url_for('order_vps_page') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' %}active{% endif %}">
-                <i class="fas fa-rocket text-gold"></i>
-                <span>خرید سرور مجازی</span>
-            </a>
-            <a href="{{ url_for('wallet_page') }}" class="xm-nav-item {% if request.endpoint == 'wallet_page' %}active{% endif %}">
-                <i class="fas fa-wallet text-success"></i>
-                <span>شارژ کیف پول (ارسال فیش)</span>
-            </a>
-            <a href="{{ url_for('tickets_page') }}" class="xm-nav-item {% if request.endpoint == 'tickets_page' %}active{% endif %}">
-                <i class="fas fa-headset text-info"></i>
-                <span>تیکت پشتیبانی</span>
-            </a>
-            <a href="{{ url_for('landing') }}" class="xm-nav-item">
-                <i class="fas fa-globe"></i>
-                <span>صفحه اصلی سایت</span>
-            </a>
+            {% if has_perm('tickets_reply') or has_perm('payments_manage') or has_perm('admin_stats') or has_perm('servers_manage') or has_perm('esxi_create_vm') or has_perm('esxi_hosts') or has_perm('ip_pool') or has_perm('plans_manage') or has_perm('users_manage') or has_perm('assign_server') or has_perm('settings_manage') or has_perm('events_view') or has_perm('license_manage') %}
+            <div class="xm-nav-group">مدیریت، پشتیبانی و فروش</div>
 
-            {% if session.get('role') in ['admin', 'owner'] %}
-            <div class="xm-nav-group">مدیریت و مالی (Admin)</div>
-            <a href="{{ url_for('admin_dashboard') }}" class="xm-nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
-                <i class="fas fa-chart-pie text-primary"></i>
-                <span>آمار و چارت‌های مدیریت</span>
+            {% if has_perm('tickets_reply') %}
+            <a href="{{ url_for('admin_tickets_page') }}" class="xm-nav-item {% if request.endpoint in ['admin_tickets_page', 'ticket_detail_page'] %}active{% endif %}">
+                <i class="fas fa-headset text-gold"></i>
+                <span>پاسخگویی به تیکت‌ها</span>
+                {% if open_tickets_count and open_tickets_count > 0 %}
+                <span class="badge bg-purple ms-auto">{{ open_tickets_count }}</span>
+                {% endif %}
             </a>
+            {% endif %}
+
+            {% if has_perm('payments_manage') %}
             <a href="{{ url_for('admin_payments_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_payments_page' %}active{% endif %}">
                 <i class="fas fa-receipt text-warning"></i>
                 <span>تایید فیش‌های واریزی</span>
@@ -65,43 +51,122 @@
                 <span class="badge bg-danger-subtle ms-auto">{{ pending_payments_count }}</span>
                 {% endif %}
             </a>
-            <a href="{{ url_for('admin_settings_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_settings_page' %}active{% endif %}">
-                <i class="fas fa-sliders text-info"></i>
-                <span>تنظیمات کارت، بات و پروکسی</span>
+            {% endif %}
+
+            {% if has_perm('users_manage') %}
+            <a href="{{ url_for('manage_users') }}" class="xm-nav-item {% if request.endpoint in ['manage_users', 'add_user_page'] %}active{% endif %}">
+                <i class="fas fa-user-shield text-primary"></i>
+                <span>اکانتینگ و سطح دسترسی</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('admin_stats') %}
+            <a href="{{ url_for('admin_dashboard') }}" class="xm-nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+                <i class="fas fa-chart-pie text-info"></i>
+                <span>آمار و چارت‌های مدیریت</span>
+            </a>
+            {% endif %}
+
+            {% if has_perm('servers_manage') %}
             <a href="{{ url_for('manage_servers') }}" class="xm-nav-item {% if request.endpoint in ['manage_servers', 'add_server_page', 'change_ip_page'] %}active{% endif %}">
                 <i class="fas fa-server"></i>
-                <span>مدیریت سرورها</span>
+                <span>مدیریت تمام سرورها</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('plans_manage') %}
             <a href="{{ url_for('manage_plans_page') }}" class="xm-nav-item {% if request.endpoint == 'manage_plans_page' %}active{% endif %}">
                 <i class="fas fa-tags text-gold"></i>
-                <span>مدیریت پلن‌ها</span>
+                <span>مدیریت پلن‌ها و تعرفه‌ها</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('esxi_create_vm') %}
             <a href="{{ url_for('create_vm_page') }}" class="xm-nav-item {% if request.endpoint == 'create_vm_page' %}active{% endif %}">
                 <i class="fas fa-plus-circle text-primary"></i>
                 <span>ساخت VM در ESXi</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('esxi_hosts') %}
             <a href="{{ url_for('esxi_hosts_page') }}" class="xm-nav-item {% if request.endpoint == 'esxi_hosts_page' %}active{% endif %}">
                 <i class="fas fa-microchip"></i>
                 <span>هاست‌های ESXi</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('ip_pool') %}
             <a href="{{ url_for('ip_pool_page') }}" class="xm-nav-item {% if request.endpoint == 'ip_pool_page' %}active{% endif %}">
                 <i class="fas fa-sitemap text-success"></i>
                 <span>بانک آی‌پی (IP Pool)</span>
             </a>
-            <a href="{{ url_for('manage_users') }}" class="xm-nav-item {% if request.endpoint in ['manage_users', 'add_user_page'] %}active{% endif %}">
-                <i class="fas fa-users"></i>
-                <span>کاربران و کیف پول</span>
-            </a>
+            {% endif %}
+
+            {% if has_perm('assign_server') %}
             <a href="{{ url_for('assign_server_page') }}" class="xm-nav-item {% if request.endpoint == 'assign_server_page' %}active{% endif %}">
                 <i class="fas fa-link"></i>
                 <span>اتصال سرور به کاربر</span>
             </a>
+            {% endif %}
+
+            {% if has_perm('settings_manage') %}
+            <a href="{{ url_for('admin_settings_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_settings_page' %}active{% endif %}">
+                <i class="fas fa-sliders text-info"></i>
+                <span>تنظیمات کارت، بات و پروکسی</span>
+            </a>
+            {% endif %}
+
+            {% if has_perm('events_view') %}
             <a href="{{ url_for('events_page') }}" class="xm-nav-item {% if request.endpoint == 'events_page' %}active{% endif %}">
                 <i class="fas fa-bell"></i>
                 <span>لاگ رویدادها</span>
             </a>
             {% endif %}
+
+            {% if has_perm('license_manage') %}
+            <a href="{{ url_for('register_license') }}" class="xm-nav-item {% if request.endpoint == 'register_license' %}active{% endif %}">
+                <i class="fas fa-key"></i>
+                <span>مدیریت لایسنس</span>
+            </a>
+            {% endif %}
+            {% endif %}
+
+            {% if has_perm('client_dashboard') or has_perm('client_order') or has_perm('client_wallet') or has_perm('client_tickets') %}
+            <div class="xm-nav-group">پنل کاربری و خدمات</div>
+
+            {% if has_perm('client_dashboard') %}
+            <a href="{{ url_for('dashboard') }}" class="xm-nav-item {% if request.endpoint in ['dashboard', 'live_port', 'user_ip_service_page', 'snapshots_page'] %}active{% endif %}">
+                <i class="fas fa-layer-group text-primary"></i>
+                <span>سرویس‌ها و نمودار مصرف</span>
+            </a>
+            {% endif %}
+
+            {% if has_perm('client_order') %}
+            <a href="{{ url_for('order_vps_page') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' %}active{% endif %}">
+                <i class="fas fa-rocket text-gold"></i>
+                <span>خرید سرور مجازی</span>
+            </a>
+            {% endif %}
+
+            {% if has_perm('client_wallet') %}
+            <a href="{{ url_for('wallet_page') }}" class="xm-nav-item {% if request.endpoint == 'wallet_page' %}active{% endif %}">
+                <i class="fas fa-wallet text-success"></i>
+                <span>شارژ کیف پول (ارسال فیش)</span>
+            </a>
+            {% endif %}
+
+            {% if has_perm('client_tickets') %}
+            <a href="{{ url_for('tickets_page') }}" class="xm-nav-item {% if request.endpoint == 'tickets_page' %}active{% endif %}">
+                <i class="fas fa-comment-dots text-info"></i>
+                <span>تیکت پشتیبانی</span>
+            </a>
+            {% endif %}
+            {% endif %}
+
+            <a href="{{ url_for('landing') }}" class="xm-nav-item">
+                <i class="fas fa-globe"></i>
+                <span>صفحه اصلی سایت</span>
+            </a>
         </nav>
 
         <div class="xm-sidebar-footer">
@@ -125,28 +190,31 @@
                 <div class="d-none d-sm-flex align-items-center gap-2 small">
                     <span class="pulse-dot"></span>
                     <span class="fw-bold">Cloud Cube</span>
-                    <span class="text-muted">• پلتفرم ابری ESXi</span>
+                    <span class="badge bg-primary-subtle">{{ role_labels_fa.get(session.get('role', 'user'), 'کاربر') }}</span>
                 </div>
             </div>
 
             <div class="d-flex align-items-center gap-2">
-                {% if session.get('role') in ['admin', 'owner'] and pending_payments_count and pending_payments_count > 0 %}
+                {% if has_perm('tickets_reply') %}
+                <a href="{{ url_for('admin_tickets_page') }}" class="btn btn-sm btn-primary rounded-pill">
+                    <i class="fas fa-headset"></i>
+                    <span>پاسخگویی تیکت‌ها ({{ open_tickets_count|default(0) }})</span>
+                </a>
+                {% endif %}
+
+                {% if has_perm('payments_manage') and pending_payments_count and pending_payments_count > 0 %}
                 <a href="{{ url_for('admin_payments_page') }}" class="btn btn-sm btn-warning rounded-pill">
-                    <i class="fas fa-bell"></i>
+                    <i class="fas fa-receipt"></i>
                     <span>{{ pending_payments_count }} فیش منتظر تایید</span>
                 </a>
                 {% endif %}
 
+                {% if has_perm('client_wallet') %}
                 <a href="{{ url_for('wallet_page') }}" class="cc-wallet-pill">
                     <i class="fas fa-wallet text-primary"></i>
                     <span>{{ "{:,}".format(user_wallet|default(0)) }} تومان</span>
-                    <i class="fas fa-plus-circle text-gold"></i>
                 </a>
-
-                <a href="{{ url_for('order_vps_page') }}" class="btn btn-sm btn-primary rounded-pill d-none d-sm-flex">
-                    <i class="fas fa-plus"></i>
-                    <span>سفارش سرور</span>
-                </a>
+                {% endif %}
 
                 <button class="theme-toggle-btn" id="themeToggleBtn" type="button" title="تغییر تم">
                     <i class="fas fa-sun" id="themeToggleIcon"></i>
@@ -158,10 +226,14 @@
                         <span class="small fw-bold">{{ session.get('username', 'User') }}</span>
                     </button>
                     <ul class="dropdown-menu">
+                        {% if has_perm('tickets_reply') %}
+                        <li><a class="dropdown-item" href="{{ url_for('admin_tickets_page') }}"><i class="fas fa-headset me-2"></i>پاسخگویی به تیکت‌ها</a></li>
+                        {% endif %}
+                        {% if has_perm('users_manage') %}
+                        <li><a class="dropdown-item" href="{{ url_for('manage_users') }}"><i class="fas fa-user-shield me-2"></i>اکانتینگ و سطح دسترسی</a></li>
+                        {% endif %}
+                        {% if has_perm('client_dashboard') %}
                         <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-layer-group me-2"></i>پنل کاربری</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('wallet_page') }}"><i class="fas fa-wallet me-2"></i>کیف پول</a></li>
-                        {% if session.get('role') in ['admin', 'owner'] %}
-                        <li><a class="dropdown-item" href="{{ url_for('admin_settings_page') }}"><i class="fas fa-sliders me-2"></i>تنظیمات بات و کارت</a></li>
                         {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-power-off me-2"></i>خروج</a></li>
@@ -184,6 +256,6 @@
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/script.js') }}?v=5.0"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}?v=6.0"></script>
 </body>
 </html>

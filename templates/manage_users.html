@@ -1,109 +1,151 @@
 {% extends "base.html" %}
-{% block title %}مدیریت کاربران و کیف پول | کلود کیوب{% endblock %}
+{% block title %}اکانتینگ، کاربران و سطح دسترسی | کلود کیوب{% endblock %}
 {% block content %}
-<div class="manage-section">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-        <div>
-            <h2 class="fw-extrabold mb-1 d-flex align-items-center gap-2" style="font-size: 1.35rem;">
-                <i class="fas fa-users text-primary"></i>
-                <span>مدیریت مشتریان و موجودی کیف پول</span>
-            </h2>
-            <p class="text-muted mb-0 small">
-                مشاهده، ویرایش نقش، شارژ کیف پول، تغییر رمز عبور و وضعیت دسترسی مشتریان کلود کیوب
-            </p>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ url_for('add_user_page') }}" class="btn btn-sm btn-primary rounded-pill px-3">
-                <i class="fas fa-user-plus me-1"></i>
-                افزودن کاربر جدید
-            </a>
-            <a href="{{ url_for('assign_server_page') }}" class="btn btn-sm btn-outline-info rounded-pill px-3">
-                <i class="fas fa-link me-1"></i>
-                اتصال سرور به کاربر
-            </a>
-        </div>
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold mb-1 d-flex align-items-center gap-2" style="font-size: 1.35rem;">
+            <i class="fas fa-user-shield text-primary"></i>
+            <span>اکانتینگ، مدیریت کاربران و تعیین سطح دسترسی</span>
+        </h1>
+        <span class="small text-muted">
+            ساخت و ویرایش اکانت پشتیبان فنی، بخش فروش، ادمین و مشتری به همراه فعال/غیرفعال کردن تک‌تک بخش‌های پنل برای هر کاربر
+        </span>
     </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('add_user_page') }}" class="btn btn-primary rounded-pill px-4">
+            <i class="fas fa-user-plus"></i>
+            <span>ساخت کاربر / پشتیبان / فروش جدید</span>
+        </a>
+        {% if has_perm('assign_server') %}
+        <a href="{{ url_for('assign_server_page') }}" class="btn btn-outline-info rounded-pill px-3">
+            <i class="fas fa-link"></i>
+            <span>اتصال سرور به کاربر</span>
+        </a>
+        {% endif %}
+    </div>
+</div>
 
-    <div class="row g-3">
-        {% for user in users %}
-        <div class="col-12 col-md-6 col-xl-4">
-            <div class="card h-100">
-                <div class="card-body d-flex flex-column gap-3">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="stat-icon bg-primary-subtle text-primary" style="width:40px;height:40px;">
-                                <i class="fas fa-user"></i>
-                            </span>
-                            <div>
-                                <div class="fw-bold">{{ user[1] }}</div>
-                                <div class="small text-gold font-mono">کیف پول: {{ "{:,}".format(user[5]|default(0)) }} تومان</div>
+<div class="row g-4 anim-fade-up">
+    {% for user in users %}
+    {% set u_id = user[0] %}
+    {% set u_name = user[1] %}
+    {% set u_role = user[2] %}
+    {% set u_tg = user[3] %}
+    {% set u_active = user[4] %}
+    {% set u_wallet = user[5]|default(0) %}
+    {% set u_perms = user[6] %}
+
+    <div class="col-12">
+        <div class="card p-4">
+            <form method="POST" action="{{ url_for('manage_users') }}">
+                <input type="hidden" name="edit_user_id" value="{{ u_id }}">
+                <input type="hidden" name="has_perm_matrix" value="1">
+
+                <!-- Top Row: User Info + Role + Wallet + Save/Toggle Actions -->
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 pb-3 mb-3 border-bottom">
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="stat-icon bg-primary-subtle">
+                            <i class="fas {% if u_role in ['admin', 'owner'] %}fa-crown{% elif u_role == 'support' %}fa-headset{% elif u_role == 'sales' %}fa-briefcase{% else %}fa-user{% endif %}"></i>
+                        </span>
+                        <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <strong class="font-mono" style="font-size: 1.1rem;">{{ u_name }}</strong>
+                                <span class="badge {% if u_role == 'admin' %}bg-purple{% elif u_role == 'support' %}bg-info-subtle{% elif u_role == 'sales' %}bg-warning-subtle{% else %}bg-primary-subtle{% endif %}">
+                                    {{ role_labels_fa.get(u_role, u_role) }}
+                                </span>
+                                {% if u_active %}
+                                    <span class="badge bg-success-subtle">فعال</span>
+                                {% else %}
+                                    <span class="badge bg-danger-subtle">مسدود</span>
+                                {% endif %}
                             </div>
-                        </div>
-                        <div class="d-flex flex-column align-items-end gap-1">
-                            {% if user[2] == 'owner' %}
-                                <span class="badge bg-purple rounded-pill">Owner</span>
-                            {% elif user[2] == 'admin' %}
-                                <span class="badge bg-gold rounded-pill">Admin</span>
-                            {% else %}
-                                <span class="badge bg-primary-subtle rounded-pill">مشتری</span>
-                            {% endif %}
-                            {% if user[4] %}
-                                <span class="badge bg-success-subtle rounded-pill">فعال</span>
-                            {% else %}
-                                <span class="badge bg-danger-subtle rounded-pill">غیرفعال</span>
-                            {% endif %}
+                            <div class="small text-muted mt-1">
+                                تعداد بخش‌های فعال برای این کاربر: <strong class="text-gold font-mono">{{ u_perms|length }}</strong> از {{ panel_modules|length }} بخش
+                            </div>
                         </div>
                     </div>
 
-                    <form method="POST" action="{{ url_for('manage_users') }}" class="d-flex flex-column gap-2 mt-auto pt-2 border-top">
-                        <input type="hidden" name="edit_user_id" value="{{ user[0] }}">
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label mb-1">نام کاربری</label>
-                                <input type="text" name="username" value="{{ user[1] }}" class="form-control form-control-sm" required>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label mb-1">نقش</label>
-                                <select name="role" class="form-select form-select-sm" required>
-                                    <option value="user" {% if user[2] == 'user' %}selected{% endif %}>User (مشتری)</option>
-                                    <option value="admin" {% if user[2] == 'admin' %}selected{% endif %}>Admin (مدیر)</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label mb-1">موجودی کیف پول (تومان)</label>
-                                <input type="number" name="wallet_balance" value="{{ user[5]|default(0) }}" class="form-control form-control-sm font-mono text-gold">
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label mb-1">رمز عبور جدید</label>
-                                <input type="password" name="password" placeholder="بدون تغییر" class="form-control form-control-sm">
-                            </div>
-                        </div>
-                        <div>
-                            <label class="form-label mb-1">چت آیدی تلگرام</label>
-                            <input type="text" name="telegram_chat_id" value="{{ user[3] or '' }}" class="form-control form-control-sm font-mono">
-                        </div>
-                        <div class="d-flex flex-wrap gap-2 justify-content-between mt-2 pt-1">
-                            <button type="submit" class="btn btn-primary btn-sm rounded-pill px-3">
-                                <i class="fas fa-save me-1"></i>
-                                ذخیره تغییرات
-                            </button>
-                            <div class="d-flex gap-1">
-                                <a href="{{ url_for('toggle_user', user_id=user[0]) }}" class="btn btn-sm btn-outline-warning rounded-pill">
-                                    <i class="fas fa-power-off me-1"></i>
-                                    {% if user[4] %}غیرفعال{% else %}فعال{% endif %}
-                                </a>
-                                <a href="{{ url_for('delete_user', user_id=user[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این کاربر مطمئنید؟')">
-                                    <i class="fas fa-trash-alt"></i>
-                                </a>
-                            </div>
-                        </div>
-                    </form>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary rounded-pill px-4">
+                            <i class="fas fa-floppy-disk"></i> ذخیره مشخصات و سطح دسترسی
+                        </button>
+                        <a href="{{ url_for('toggle_user', user_id=u_id) }}" class="btn btn-sm btn-outline-warning rounded-pill">
+                            <i class="fas fa-power-off"></i> {% if u_active %}غیرفعال کردن اکانت{% else %}فعال کردن اکانت{% endif %}
+                        </a>
+                        <a href="{{ url_for('delete_user', user_id=u_id) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('کاربر {{ u_name }} حذف شود؟')">
+                            <i class="fas fa-trash"></i>
+                        </a>
+                    </div>
                 </div>
-            </div>
+
+                <!-- Credentials & Role Fields -->
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">نام کاربری</label>
+                        <input type="text" name="username" value="{{ u_name }}" class="form-control form-control-sm font-mono" required>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">نقش (با تغییر نقش، پیش‌فرض اعمال می‌شود)</label>
+                        <select name="role" class="form-select form-select-sm" onchange="applyUserPreset({{ u_id }}, this.value)">
+                            <option value="user" {% if u_role == 'user' %}selected{% endif %}>👤 مشتری عادی (User)</option>
+                            <option value="support" {% if u_role == 'support' %}selected{% endif %}>👨‍💻 پشتیبان فنی (Support)</option>
+                            <option value="sales" {% if u_role == 'sales' %}selected{% endif %}>💼 بخش فروش و مالی (Sales)</option>
+                            <option value="admin" {% if u_role == 'admin' %}selected{% endif %}>👑 مدیر کل (Admin)</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">کیف پول (تومان)</label>
+                        <input type="number" name="wallet_balance" value="{{ u_wallet }}" class="form-control form-control-sm font-mono text-gold">
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">رمز عبور جدید</label>
+                        <input type="password" name="password" placeholder="بدون تغییر" class="form-control form-control-sm font-mono">
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label">چت‌آیدی تلگرام</label>
+                        <input type="text" name="telegram_chat_id" value="{{ u_tg or '' }}" class="form-control form-control-sm font-mono">
+                    </div>
+                </div>
+
+                <!-- 17-Module Checkboxes for This User -->
+                <div class="p-3 rounded" style="background: rgba(10, 10, 24, 0.45); border: 1px solid var(--border-subtle);">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <span class="small fw-bold text-gold">
+                            <i class="fas fa-key me-1"></i> بخش‌های مجاز و قابل مشاهده برای «{{ u_name }}» (هر گزینه غیرفعال از منو و پنل این کاربر حذف می‌شود):
+                        </span>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size: 0.74rem;" onclick="setAllUserPerms({{ u_id }}, true)">فعال کردن همه</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.74rem;" onclick="setAllUserPerms({{ u_id }}, false)">غیرفعال کردن همه</button>
+                        </div>
+                    </div>
+
+                    <div class="cc-perm-grid" id="permGrid_{{ u_id }}">
+                        {% for m_key, m_label, m_group in panel_modules %}
+                        <label class="cc-perm-item {% if m_group == 'staff' %}staff-mod{% else %}client-mod{% endif %}">
+                            <input type="checkbox" name="perms" value="{{ m_key }}" class="u-perm-{{ u_id }}" {% if m_key in u_perms %}checked{% endif %}>
+                            <span>{{ m_label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </form>
         </div>
-        {% endfor %}
     </div>
+    {% endfor %}
 </div>
+
+<script>
+const ROLE_PRESETS = {{ role_presets_json|safe }};
+function applyUserPreset(uid, role) {
+    const allowed = new Set(ROLE_PRESETS[role] || []);
+    document.querySelectorAll(".u-perm-" + uid).forEach(function(cb) {
+        cb.checked = allowed.has(cb.value);
+    });
+}
+function setAllUserPerms(uid, state) {
+    document.querySelectorAll(".u-perm-" + uid).forEach(function(cb) {
+        cb.checked = state;
+    });
+}
+</script>
 {% endblock %}

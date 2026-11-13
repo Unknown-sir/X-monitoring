@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}تیکت #{{ ticket.id }} — {{ ticket.subject }} | کلود کیوب{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span class="badge bg-purple font-mono" style="font-size: 0.9rem;">#{{ ticket.id }}</span>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.25rem;">{{ ticket.subject }}</h1>
+        <span class="badge bg-info-subtle">{{ ticket.dept_label }}</span>
+        <span class="badge {% if ticket.priority in ['urgent', 'high'] %}bg-danger-subtle{% else %}bg-primary-subtle{% endif %}">اولویت: {{ ticket.prio_label }}</span>
+        {% if ticket.status == 'open' %}
+            <span class="badge bg-warning-subtle">منتظر پاسخ</span>
+        {% elif ticket.status == 'answered' %}
+            <span class="badge bg-success-subtle">پاسخ داده شده</span>
+        {% elif ticket.status == 'closed' %}
+            <span class="badge bg-secondary-subtle">بسته شده</span>
+        {% else %}
+            <span class="badge bg-info-subtle">در حال بررسی</span>
+        {% endif %}
+    </div>
+
+    <div class="d-flex gap-2">
+        {% if ticket.status != 'closed' %}
+        <form method="POST" action="{{ url_for('ticket_detail_page', ticket_id=ticket.id) }}" class="m-0">
+            <input type="hidden" name="form_action" value="close_ticket">
+            <button type="submit" class="btn btn-sm btn-outline-warning rounded-pill">
+                <i class="fas fa-lock"></i> بستن تیکت
+            </button>
+        </form>
+        {% else %}
+        <form method="POST" action="{{ url_for('ticket_detail_page', ticket_id=ticket.id) }}" class="m-0">
+            <input type="hidden" name="form_action" value="reopen_ticket">
+            <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill">
+                <i class="fas fa-lock-open"></i> بازگشایی تیکت
+            </button>
+        </form>
+        {% endif %}
+
+        <a href="{{ url_for('admin_tickets_page') if is_staff else url_for('tickets_page') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+            <i class="fas fa-arrow-right"></i> بازگشت به لیست
+        </a>
+    </div>
+</div>
+
+<div class="row g-4 anim-fade-up">
+    <!-- Main Column: Chat Messages & Reply Composer -->
+    <div class="col-12 {% if is_staff %}col-xl-8{% else %}col-xl-12{% endif %}">
+        <!-- Messages Thread -->
+        <div class="card p-4 mb-4">
+            <div class="cc-chat-thread">
+                {% for m in messages %}
+                <div class="cc-msg-bubble {% if m.sender_role == 'admin' %}cc-msg-admin{% else %}cc-msg-user{% endif %}">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom" style="border-color: var(--border-subtle) !important;">
+                        <div class="d-flex align-items-center gap-2">
+                            {% if m.sender_role == 'admin' %}
+                                <span class="badge bg-purple"><i class="fas fa-headset"></i> {{ m.sender_badge }}</span>
+                                <span class="small text-muted font-mono">({{ m.sender_name }})</span>
+                            {% else %}
+                                <span class="badge bg-info-subtle"><i class="fas fa-user"></i> مشتری ({{ m.sender_name }})</span>
+                            {% endif %}
+                        </div>
+                        <span class="small font-mono text-muted" style="font-size: 0.75rem;">{{ m.created_at }}</span>
+                    </div>
+                    <div class="small" style="white-space: pre-wrap; line-height: 1.75;">{{ m.message }}</div>
+                    {% if m.attachment_filename %}
+                    <div class="mt-3 pt-2 border-top">
+                        <a href="{{ url_for('static', filename='uploads/receipts/' ~ m.attachment_filename) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-paperclip"></i> مشاهده تصویر پیوست‌شده
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Reply Composer Box -->
+        <div class="card p-4">
+            <h3 class="fw-bold mb-3" style="font-size: 1.05rem;">
+                <i class="fas fa-reply text-primary me-1"></i>
+                {% if is_staff %}ارسال پاسخ رسمی (پشتیبانی / فروش / مالی){% else %}ارسال پاسخ جدید{% endif %}
+            </h3>
+
+            {% if is_staff %}
+            <!-- Canned Responses for Admin, Support & Sales -->
+            <div class="mb-3">
+                <div class="small text-muted mb-2">پاسخ‌های آماده یک‌کلیکی (مخصوص کارشناسان پشتیبانی و فروش):</div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="cc-canned-chip" onclick="insertCanned('سلام و وقت بخیر؛\nسرور مجازی شما توسط تیم فنی کلود کیوب بررسی شد و ارتباط شبکه و پورت در وضعیت پایدار و فعال قرار دارد.')">
+                        ✅ رفع مشکل فنی سرور
+                    </button>
+                    <button type="button" class="cc-canned-chip" onclick="insertCanned('سلام؛\nفیش واریزی شما توسط واحد مالی تایید شد و سرویس/کیف پول شما به صورت خودکار شارژ گردید.')">
+                        💳 تایید فیش و شارژ حساب
+                    </button>
+                    <button type="button" class="cc-canned-chip" onclick="insertCanned('سلام؛\nاز طریق بخش «خرید سرور مجازی» یا «مدیریت سرویس» در پنل کاربری می‌توانید پلن خود را به سرویس طلایی یا پلاتینیوم ارتقا دهید.')">
+                        💼 راهنمای واحد فروش
+                    </button>
+                    <button type="button" class="cc-canned-chip" onclick="insertCanned('سلام؛\nسیستم‌عامل اوبونتو سرور شما از روی Golden Image بازسازی (Rebuild) شد و آی‌پی اختصاصی شما در Netplan تنظیم گردید.')">
+                        🔄 انجام ریبیلد اوبونتو
+                    </button>
+                    <button type="button" class="cc-canned-chip" onclick="insertCanned('سلام؛\nآی‌پی جدید از بانک آی‌پی دیتاسنتر به سرور شما اختصاص یافت و در فایل Netplan فعال شد.')">
+                        🌐 تخصیص آی‌پی جدید
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('ticket_detail_page', ticket_id=ticket.id) }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+                <input type="hidden" name="form_action" value="reply">
+
+                {% if is_staff %}
+                <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">عنوان واحد پاسخ‌دهنده</label>
+                        <select name="sender_badge" class="form-select form-select-sm">
+                            <option value="پشتیبانی فنی کلود کیوب">👨‍💻 پشتیبانی فنی کلود کیوب</option>
+                            <option value="واحد فروش و مشاوره کلود کیوب">💼 واحد فروش و مشاوره کلود کیوب</option>
+                            <option value="امور مالی و صورتحساب کلود کیوب">💳 امور مالی و صورتحساب کلود کیوب</option>
+                            <option value="مدیریت مجموعه کلود کیوب">👑 مدیریت مجموعه کلود کیوب</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">وضعیت تیکت پس از ارسال پاسخ</label>
+                        <select name="next_status" class="form-select form-select-sm">
+                            <option value="answered" selected>پاسخ داده شده (Answered)</option>
+                            <option value="pending">در حال بررسی / پیگیری (Pending)</option>
+                            <option value="closed">بستن تیکت (Closed)</option>
+                        </select>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div>
+                    <textarea id="ticketReplyBox" name="message" rows="4" class="form-control" placeholder="متن پاسخ خود را بنویسید..." required></textarea>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="small text-muted m-0"><i class="fas fa-image text-primary me-1"></i> پیوست تصویر (اختیاری):</label>
+                        <input type="file" name="attachment_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm" style="max-width: 230px;">
+                    </div>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">
+                        <i class="fas fa-paper-plane"></i> ارسال پاسخ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if is_staff and customer_crm %}
+    <!-- Right Column: 360-Degree Customer CRM & Department/Internal Note Panel -->
+    <div class="col-12 col-xl-4">
+        <div class="d-flex flex-column gap-3">
+            <!-- Card 1: Customer Summary & Wallet -->
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                    <span class="fw-bold small"><i class="fas fa-id-card text-primary me-1"></i> پرونده مشتری (CRM)</span>
+                    <span class="badge bg-primary-subtle font-mono">UID #{{ customer_crm.user_id }}</span>
+                </div>
+                <div class="d-flex flex-column gap-2 small">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">نام کاربری:</span>
+                        <strong class="font-mono">{{ customer_crm.username }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">موجودی کیف پول:</span>
+                        <strong class="font-mono text-gold">{{ "{:,}".format(customer_crm.wallet_balance) }} تومان</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">چت‌آیدی تلگرام:</span>
+                        <span class="font-mono">{{ customer_crm.telegram_chat_id or 'ثبت نشده' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Ticket Routing & Private Staff Internal Note -->
+            <div class="card p-3">
+                <div class="fw-bold small mb-2 pb-2 border-bottom">
+                    <i class="fas fa-sliders text-gold me-1"></i> ارجاع واحد، اولویت و یادداشت محرمانه
+                </div>
+                <form method="POST" action="{{ url_for('ticket_detail_page', ticket_id=ticket.id) }}" class="d-flex flex-column gap-2">
+                    <input type="hidden" name="form_action" value="update_meta">
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label mb-1">دپارتمان</label>
+                            <select name="department" class="form-select form-select-sm">
+                                <option value="technical" {% if ticket.department == 'technical' %}selected{% endif %}>پشتیبانی فنی</option>
+                                <option value="sales" {% if ticket.department == 'sales' %}selected{% endif %}>بخش فروش</option>
+                                <option value="billing" {% if ticket.department == 'billing' %}selected{% endif %}>امور مالی</option>
+                                <option value="management" {% if ticket.department == 'management' %}selected{% endif %}>مدیریت</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label mb-1">اولویت</label>
+                            <select name="priority" class="form-select form-select-sm">
+                                <option value="low" {% if ticket.priority == 'low' %}selected{% endif %}>عادی</option>
+                                <option value="medium" {% if ticket.priority == 'medium' %}selected{% endif %}>متوسط</option>
+                                <option value="high" {% if ticket.priority == 'high' %}selected{% endif %}>فوری</option>
+                                <option value="urgent" {% if ticket.priority == 'urgent' %}selected{% endif %}>بحرانی</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label mb-1">وضعیت تیکت</label>
+                        <select name="status" class="form-select form-select-sm">
+                            <option value="open" {% if ticket.status == 'open' %}selected{% endif %}>باز (منتظر پاسخ)</option>
+                            <option value="pending" {% if ticket.status == 'pending' %}selected{% endif %}>در حال بررسی</option>
+                            <option value="answered" {% if ticket.status == 'answered' %}selected{% endif %}>پاسخ داده شده</option>
+                            <option value="closed" {% if ticket.status == 'closed' %}selected{% endif %}>بسته شده</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label mb-1 text-warning"><i class="fas fa-eye-slash me-1"></i> یادداشت داخلی همکاران (مخفی از مشتری)</label>
+                        <textarea name="internal_note" rows="2" class="form-control form-control-sm" placeholder="توضیحات محرمانه برای تیم فنی یا فروش...">{{ ticket.internal_note }}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline-primary w-100 mt-1">
+                        <i class="fas fa-floppy-disk"></i> ذخیره وضعیت و یادداشت
+                    </button>
+                </form>
+            </div>
+
+            <!-- Card 3: Customer's Active Servers -->
+            <div class="card p-3">
+                <div class="fw-bold small mb-2 pb-2 border-bottom">
+                    <i class="fas fa-server text-info me-1"></i> سرورهای این مشتری ({{ customer_crm.servers|length }})
+                </div>
+                {% if customer_crm.servers %}
+                <div class="d-flex flex-column gap-2">
+                    {% for cs in customer_crm.servers %}
+                    <div class="p-2 rounded small" style="background: rgba(12,12,29,0.55); border: 1px solid var(--border-subtle);">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong class="font-mono">{{ cs.name }}</strong>
+                            <span class="badge {% if cs.is_suspended %}bg-danger-subtle{% elif cs.active %}bg-success-subtle{% else %}bg-warning-subtle{% endif %}">
+                                {% if cs.is_suspended %}مسدود{% elif cs.active %}آنلاین{% else %}خاموش{% endif %}
+                            </span>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted font-mono mt-1" style="font-size: 0.75rem;">
+                            <span>{{ cs.ip }}</span>
+                            <span>{{ "%.1f"|format(cs.usage) }}/{{ "%.0f"|format(cs.limit) }} GiB</span>
+                        </div>
+                        <div class="d-flex gap-1 mt-2">
+                            <a href="{{ url_for('live_port', server_id=cs.id) }}" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size: 0.72rem;">چارت زنده</a>
+                            <a href="{{ url_for('manage_servers') }}" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;">مدیریت</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="small text-muted text-center py-2">این کاربر سروری ندارد.</div>
+                {% endif %}
+            </div>
+
+            <!-- Card 4: Customer's Recent Payment Receipts -->
+            <div class="card p-3">
+                <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                    <span class="fw-bold small"><i class="fas fa-receipt text-warning me-1"></i> فیش‌های اخیر مشتری</span>
+                    <a href="{{ url_for('admin_payments_page') }}" class="small" style="font-size: 0.75rem;">همه فیش‌ها</a>
+                </div>
+                {% if customer_crm.payments %}
+                <div class="d-flex flex-column gap-2">
+                    {% for cp in customer_crm.payments %}
+                    <div class="d-flex justify-content-between align-items-center small">
+                        <div>
+                            <span class="font-mono text-muted">#{{ cp.id }}</span>
+                            <span>{{ cp.title[:22] }}</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="font-mono text-gold" style="font-size: 0.75rem;">{{ "{:,}".format(cp.amount) }}</span>
+                            <span class="badge {% if cp.status == 'approved' %}bg-success-subtle{% elif cp.status == 'rejected' %}bg-danger-subtle{% else %}bg-warning-subtle{% endif %}" style="font-size: 0.65rem;">
+                                {{ cp.status }}
+                            </span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="small text-muted text-center py-2">فیشی ثبت نشده است.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function insertCanned(txt) {
+    const box = document.getElementById("ticketReplyBox");
+    if (box) {
+        box.value = txt;
+        box.focus();
+    }
+}
+</script>
+{% endblock %}

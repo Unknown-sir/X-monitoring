@@ -132,3 +132,34 @@ class PaymentRequest(Base):
     telegram_msg_id = Column(Integer, nullable=True)
     fulfillment_note = Column(Text, nullable=True)
     created_at = Column(String(64), nullable=False)
+
+
+class WebTicket(Base):
+    __tablename__ = "web_tickets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    username = Column(String(150), nullable=False)
+    subject = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    admin_reply = Column(Text, nullable=True)
+    status = Column(String(32), nullable=False, default="open")  # open, pending, answered, closed
+    department = Column(String(50), nullable=False, default="technical")  # technical, sales, billing, management
+    priority = Column(String(32), nullable=False, default="medium")  # low, medium, high, urgent
+    server_id = Column(Integer, nullable=True)
+    internal_note = Column(Text, nullable=True)
+    created_at = Column(String(64), nullable=False)
+    updated_at = Column(String(64), nullable=True)
+
+
+class TicketMessage(Base):
+    __tablename__ = "ticket_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticket_id = Column(Integer, nullable=False, index=True)
+    sender_role = Column(String(32), nullable=False, default="user")  # user, admin
+    sender_name = Column(String(150), nullable=False)
+    sender_badge = Column(String(100), nullable=True)
+    message = Column(Text, nullable=False)
+    attachment_filename = Column(String(255), nullable=True)
+    created_at = Column(String(64), nullable=False)

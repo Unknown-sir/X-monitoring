@@ -895,3 +895,106 @@ body.light-mode .cc-plan-card {
 .receipt-thumb:hover {
     transform: scale(1.08);
 }
+
+/* Ensure instant full brightness while preserving smooth motion */
+@keyframes fadeUp {
+    from {
+        opacity: 0.98;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.delay-1, .delay-2, .delay-3, .delay-4 {
+    animation-delay: 0s !important;
+}
+
+
+/* --- Ticketing & CRM Chat Thread Styles --- */
+.cc-chat-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-height: 540px;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.cc-msg-bubble {
+    padding: 14px 18px;
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    position: relative;
+}
+
+.cc-msg-user {
+    background: rgba(15, 15, 36, 0.75);
+    border-right: 4px solid var(--info);
+}
+
+.cc-msg-admin {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.18) 0%, rgba(109, 40, 217, 0.10) 100%);
+    border-right: 4px solid var(--primary);
+    box-shadow: 0 8px 24px -8px rgba(139, 92, 246, 0.25);
+}
+
+.cc-canned-chip {
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(167, 139, 250, 0.32);
+    color: var(--text-main);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.cc-canned-chip:hover {
+    background: var(--primary);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+
+/* --- Granular RBAC Permission Checkboxes & Matrix --- */
+.cc-perm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+}
+
+.cc-perm-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(12, 12, 29, 0.55);
+    border: 1px solid var(--border-subtle);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.18s ease;
+    user-select: none;
+}
+
+.cc-perm-item:hover {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.10);
+}
+
+.cc-perm-item input[type="checkbox"] {
+    accent-color: #8B5CF6;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.cc-perm-item.staff-mod {
+    border-right: 3px solid var(--primary);
+}
+
+.cc-perm-item.client-mod {
+    border-right: 3px solid var(--info);
+}

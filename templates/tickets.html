@@ -1,73 +1,125 @@
 {% extends "base.html" %}
-{% block title %}پشتیبانی و تیکت‌ها | کلود کیوب{% endblock %}
+{% block title %}تیکت و پشتیبانی | کلود کیوب{% endblock %}
 {% block content %}
-<div class="row g-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-headset text-primary me-1"></i> مرکز پشتیبانی، فروش و امور مالی
+        </h1>
+    </div>
+    {% if session.get('role') in ['admin', 'owner'] %}
+    <a href="{{ url_for('admin_tickets_page') }}" class="btn btn-sm btn-primary rounded-pill px-3">
+        <i class="fas fa-sliders"></i> ورود به پنل مدیریت تیکت‌ها (ویژه ادمین و فروش)
+    </a>
+    {% endif %}
+</div>
+
+<div class="row g-4 anim-fade-up">
+    <!-- New Ticket Form -->
     <div class="col-12 col-xl-4">
-        <div class="card p-4">
-            <h3 class="fw-bold mb-2" style="font-size: 1.15rem;"><i class="fas fa-paper-plane text-primary me-1"></i> ارسال تیکت جدید به پشتیبانی</h3>
-            <p class="text-muted small mb-3">کارشناسان فنی کلود کیوب در سریع‌ترین زمان ممکن پاسخگوی شما هستند.</p>
-            <form method="POST" action="{{ url_for('tickets_page') }}" class="d-flex flex-column gap-3">
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-plus-circle text-primary me-1"></i> ثبت تیکت جدید</h3>
+            <form method="POST" action="{{ url_for('tickets_page') }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
                 <div>
                     <label class="form-label">موضوع تیکت</label>
-                    <input type="text" name="subject" class="form-control" placeholder="مثلاً سوال در مورد ارتقای پلن یا شبکه" required>
+                    <input type="text" name="subject" class="form-control" placeholder="عنوان درخواست..." required>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">بخش مربوطه</label>
+                        <select name="department" class="form-select form-select-sm">
+                            <option value="technical" selected>پشتیبانی فنی و سرور</option>
+                            <option value="sales">بخش فروش و مشاوره</option>
+                            <option value="billing">امور مالی و فیش‌ها</option>
+                            <option value="management">مدیریت کلود کیوب</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">اولویت</label>
+                        <select name="priority" class="form-select form-select-sm">
+                            <option value="low">عادی</option>
+                            <option value="medium" selected>متوسط</option>
+                            <option value="high">فوری</option>
+                            <option value="urgent">بحرانی</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">سرور مرتبط (اختیاری)</label>
+                    <select name="server_id" class="form-select form-select-sm">
+                        <option value="">— عمومی / پیش از خرید —</option>
+                        {% for s in user_servers %}
+                        <option value="{{ s.id }}">{{ s.name }} ({{ s.ip }})</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 <div>
                     <label class="form-label">متن پیام</label>
-                    <textarea name="message" rows="4" class="form-control" placeholder="جزئیات درخواست یا شماره آی‌پی سرور خود را بنویسید..." required></textarea>
+                    <textarea name="message" rows="4" class="form-control" placeholder="شرح کامل درخواست یا سوال..." required></textarea>
                 </div>
-                <button type="submit" class="btn btn-primary rounded-pill py-2">
-                    <i class="fas fa-send"></i> ثبت و ارسال تیکت
+                <div>
+                    <label class="form-label">پیوست تصویر / اسکرین‌شات (اختیاری)</label>
+                    <input type="file" name="attachment_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm">
+                </div>
+                <button type="submit" class="btn btn-primary rounded-pill py-2 mt-1">
+                    <i class="fas fa-paper-plane"></i> ثبت و ارسال تیکت
                 </button>
             </form>
-            <div class="mt-3 pt-3 border-top small text-muted">
-                <div><i class="fab fa-telegram text-info me-1"></i> پشتیبانی تلگرام: <span class="font-mono text-gold">@CloudCubeVPS</span></div>
-                <div class="mt-1"><i class="fas fa-user-shield text-primary me-1"></i> مدیریت مجموعه: <span class="font-mono">@unknown_eng</span></div>
-            </div>
         </div>
     </div>
 
+    <!-- Customer's Ticket List -->
     <div class="col-12 col-xl-8">
-        <div class="card p-4">
-            <h3 class="fw-bold mb-3" style="font-size: 1.15rem;"><i class="fas fa-inbox text-gold me-1"></i> لیست تیکت‌های پشتیبانی</h3>
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-inbox text-gold me-1"></i> تیکت‌های من</h3>
             {% if tickets %}
-            <div class="d-flex flex-column gap-3">
-                {% for t in tickets %}
-                <div class="p-3 rounded" style="background: rgba(0,0,0,0.28); border: 1px solid var(--border-color);">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                        <div>
-                            <span class="badge bg-secondary-subtle font-mono">#{{ t.id }}</span>
-                            <strong class="ms-1">{{ t.subject }}</strong>
-                            <span class="small text-muted ms-2">(کاربر: {{ t.username }})</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="small font-mono text-muted">{{ t.created_at }}</span>
-                            {% if t.status == 'answered' %}
-                                <span class="badge bg-success-subtle">پاسخ داده شده</span>
-                            {% else %}
-                                <span class="badge bg-warning-subtle">در انتظار بررسی</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <p class="small mb-2" style="white-space: pre-wrap;">{{ t.message }}</p>
-
-                    {% if t.admin_reply %}
-                    <div class="p-3 rounded mt-2 small" style="background: rgba(0, 96, 57, 0.22); border-right: 3px solid var(--gold);">
-                        <div class="fw-bold text-gold mb-1"><i class="fas fa-headset me-1"></i> پاسخ پشتیبانی کلود کیوب:</div>
-                        <div style="white-space: pre-wrap;">{{ t.admin_reply }}</div>
-                    </div>
-                    {% endif %}
-
-                    {% if session.get('role') in ['admin', 'owner'] %}
-                    <form method="POST" action="{{ url_for('reply_web_ticket', ticket_id=t.id) }}" class="d-flex gap-2 mt-2 pt-2 border-top">
-                        <input type="text" name="admin_reply" class="form-control form-control-sm" placeholder="ثبت پاسخ ادمین..." value="{{ t.admin_reply or '' }}" required>
-                        <button type="submit" class="btn btn-sm btn-gold">ارسال پاسخ</button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endfor %}
+            <div class="table-responsive">
+                <table class="table small mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>موضوع و سرور</th>
+                            <th>واحد</th>
+                            <th>وضعیت</th>
+                            <th>بروزرسانی</th>
+                            <th>گفتگو</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in tickets %}
+                        <tr>
+                            <td class="font-mono fw-bold">#{{ t.id }}</td>
+                            <td>
+                                <a href="{{ url_for('ticket_detail_page', ticket_id=t.id) }}" class="fw-bold text-main">{{ t.subject }}</a>
+                                {% if t.server_name %}
+                                <div class="small text-info font-mono">{{ t.server_name }} ({{ t.server_ip }})</div>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge bg-primary-subtle">{{ t.dept_label }}</span></td>
+                            <td>
+                                {% if t.status == 'answered' %}
+                                    <span class="badge bg-success-subtle"><i class="fas fa-check"></i> پاسخ داده شده</span>
+                                {% elif t.status == 'closed' %}
+                                    <span class="badge bg-secondary-subtle">بسته شده</span>
+                                {% elif t.status == 'pending' %}
+                                    <span class="badge bg-info-subtle">در حال بررسی</span>
+                                {% else %}
+                                    <span class="badge bg-warning-subtle">منتظر پاسخ</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono text-muted" style="font-size: 0.75rem;">{{ t.updated_at }}</td>
+                            <td>
+                                <a href="{{ url_for('ticket_detail_page', ticket_id=t.id) }}" class="btn btn-sm btn-outline-primary rounded-pill">
+                                    <i class="fas fa-comments"></i> مشاهده
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
             {% else %}
-            <div class="text-center text-muted p-4">هنوز هیچ تیکتی ثبت نشده است.</div>
+            <div class="text-center text-muted p-5">هنوز تیکتی ثبت نکرده‌اید.</div>
             {% endif %}
         </div>
     </div>

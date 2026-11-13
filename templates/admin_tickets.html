@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}مرکز تیکتینگ پشتیبانی و فروش | کلود کیوب{% endblock %}
+{% block content %}
+
+<!-- Header & New Outbound Ticket Button -->
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-headset text-primary me-1"></i> مرکز مدیریت تیکت‌ها (پشتیبانی فنی، فروش و مالی)
+        </h1>
+        <span class="small text-muted">پاسخگویی چندبخشی، ارجاع بین واحدها، دسترسی به پرونده ۳۶۰ درجه مشتری و ارسال پیام به تلگرام</span>
+    </div>
+    <button type="button" class="btn btn-primary rounded-pill px-3" onclick="const el=document.getElementById('newAdminTicketBox'); el.style.display=(el.style.display==='none'?'block':'none');">
+        <i class="fas fa-paper-plane"></i> ارسال تیکت جدید به مشتری
+    </button>
+</div>
+
+{% if flash_msg %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ flash_msg }}</div>
+{% endif %}
+
+<!-- Collapsible Outbound Ticket Composer (Admin / Sales -> Customer) -->
+<div id="newAdminTicketBox" class="card p-4 mb-4" style="display: none; border-color: var(--primary); box-shadow: var(--glow-violet);">
+    <h3 class="fw-bold mb-3" style="font-size: 1.05rem;"><i class="fas fa-envelope-open-text text-gold me-1"></i> ایجاد و ارسال تیکت مستقیم به مشتری (از طرف پشتیبانی / فروش / مالی)</h3>
+    <form method="POST" action="{{ url_for('admin_tickets_page') }}">
+        <input type="hidden" name="action" value="create_to_user">
+        <div class="row g-3">
+            <div class="col-12 col-md-3">
+                <label class="form-label">انتخاب مشتری</label>
+                <select name="user_id" class="form-select form-select-sm" required>
+                    {% for u in all_users %}
+                    <option value="{{ u.id }}">{{ u.username }} (کیف پول: {{ "{:,}".format(u.wallet) }} ت)</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">واحد ارسال‌کننده</label>
+                <select name="department" class="form-select form-select-sm">
+                    <option value="sales">بخش فروش و مشاوره</option>
+                    <option value="technical">پشتیبانی فنی و سرور</option>
+                    <option value="billing">امور مالی و فیش‌ها</option>
+                    <option value="management">مدیریت کلود کیوب</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">عنوان نمایشی فرستنده</label>
+                <input type="text" name="sender_badge" value="واحد فروش و پشتیبانی کلود کیوب" class="form-control form-control-sm">
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label">اولویت</label>
+                <select name="priority" class="form-select form-select-sm">
+                    <option value="medium">متوسط</option>
+                    <option value="high" selected>فوری</option>
+                    <option value="urgent">بحرانی (اورژانسی)</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-5">
+                <label class="form-label">موضوع تیکت</label>
+                <input type="text" name="subject" class="form-control form-control-sm" placeholder="مثلاً تحویل سرویس اختصاصی یا اطلاعیه تمدید" required>
+            </div>
+            <div class="col-12 col-md-7">
+                <label class="form-label">متن پیام</label>
+                <div class="d-flex gap-2">
+                    <input type="text" name="message" class="form-control form-control-sm" placeholder="متن پیام به مشتری..." required>
+                    <button type="submit" class="btn btn-sm btn-primary px-4" style="white-space: nowrap;">
+                        <i class="fas fa-send"></i> ثبت و ارسال
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- KPI Summary Row -->
+<div class="row g-3 mb-4 anim-fade-up">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">کل تیکت‌ها</div>
+                <div class="fw-extrabold font-mono mt-1" style="font-size: 1.45rem;">{{ total_count }}</div>
+            </div>
+            <span class="stat-icon bg-primary-subtle"><i class="fas fa-inbox"></i></span>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">منتظر پاسخ (باز)</div>
+                <div class="fw-extrabold font-mono text-warning mt-1" style="font-size: 1.45rem;">{{ open_count }}</div>
+            </div>
+            <span class="stat-icon bg-warning-subtle"><i class="fas fa-bell"></i></span>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">پشتیبانی فنی</div>
+                <div class="fw-extrabold font-mono text-info mt-1" style="font-size: 1.45rem;">{{ tech_count }}</div>
+            </div>
+            <span class="stat-icon bg-info-subtle"><i class="fas fa-server"></i></span>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">فروش و امور مالی</div>
+                <div class="fw-extrabold font-mono text-success mt-1" style="font-size: 1.45rem;">{{ sales_billing_count }}</div>
+            </div>
+            <span class="stat-icon bg-success-subtle"><i class="fas fa-coins"></i></span>
+        </div>
+    </div>
+</div>
+
+<!-- Filter & Search Bar -->
+<div class="card p-3 mb-4 anim-fade-up">
+    <form method="GET" action="{{ url_for('admin_tickets_page') }}" class="row g-2 align-items-center">
+        <div class="col-12 col-md-3">
+            <input type="text" name="q" value="{{ search_q }}" class="form-control form-control-sm" placeholder="جستجوی کاربر، موضوع، #شماره یا IP...">
+        </div>
+        <div class="col-6 col-md-2">
+            <select name="status" class="form-select form-select-sm">
+                <option value="all" {% if f_status == 'all' %}selected{% endif %}>همه وضعیت‌ها</option>
+                <option value="open" {% if f_status == 'open' %}selected{% endif %}>باز (منتظر پاسخ)</option>
+                <option value="pending" {% if f_status == 'pending' %}selected{% endif %}>در حال بررسی</option>
+                <option value="answered" {% if f_status == 'answered' %}selected{% endif %}>پاسخ داده شده</option>
+                <option value="closed" {% if f_status == 'closed' %}selected{% endif %}>بسته شده</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-3">
+            <select name="dept" class="form-select form-select-sm">
+                <option value="all" {% if f_dept == 'all' %}selected{% endif %}>همه دپارتمان‌ها (فنی / فروش / مالی)</option>
+                <option value="technical" {% if f_dept == 'technical' %}selected{% endif %}>پشتیبانی فنی و سرور</option>
+                <option value="sales" {% if f_dept == 'sales' %}selected{% endif %}>بخش فروش و مشاوره</option>
+                <option value="billing" {% if f_dept == 'billing' %}selected{% endif %}>امور مالی و فیش‌ها</option>
+                <option value="management" {% if f_dept == 'management' %}selected{% endif %}>مدیریت کلود کیوب</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <select name="priority" class="form-select form-select-sm">
+                <option value="all" {% if f_prio == 'all' %}selected{% endif %}>همه اولویت‌ها</option>
+                <option value="urgent" {% if f_prio == 'urgent' %}selected{% endif %}>بحرانی (اورژانسی)</option>
+                <option value="high" {% if f_prio == 'high' %}selected{% endif %}>فوری</option>
+                <option value="medium" {% if f_prio == 'medium' %}selected{% endif %}>متوسط</option>
+                <option value="low" {% if f_prio == 'low' %}selected{% endif %}>عادی</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2 d-flex gap-1">
+            <button type="submit" class="btn btn-sm btn-primary w-100"><i class="fas fa-filter"></i> فیلتر</button>
+            <a href="{{ url_for('admin_tickets_page') }}" class="btn btn-sm btn-outline-secondary">ریست</a>
+        </div>
+    </form>
+</div>
+
+<!-- Tickets Table -->
+<div class="card p-3 anim-fade-up">
+    {% if tickets %}
+    <div class="table-responsive">
+        <table class="table small mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>مشتری</th>
+                    <th>موضوع و سرور مرتبط</th>
+                    <th>واحد (دپارتمان)</th>
+                    <th>اولویت</th>
+                    <th>وضعیت</th>
+                    <th>آخرین بروزرسانی</th>
+                    <th>عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tickets %}
+                <tr style="{% if t.status in ['open', 'pending'] %}background: rgba(139, 92, 246, 0.06);{% endif %}">
+                    <td class="font-mono fw-bold">#{{ t.id }}</td>
+                    <td>
+                        <div class="fw-bold font-mono">{{ t.username }}</div>
+                        <div class="text-gold font-mono" style="font-size: 0.72rem;">کیف پول: {{ "{:,}".format(t.user_wallet) }} ت</div>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('ticket_detail_page', ticket_id=t.id) }}" class="fw-bold text-main" style="font-size: 0.92rem;">
+                            {{ t.subject }}
+                        </a>
+                        {% if t.server_name %}
+                        <div class="small text-info font-mono mt-1">
+                            <i class="fas fa-server me-1"></i> {{ t.server_name }} ({{ t.server_ip }})
+                        </div>
+                        {% endif %}
+                        {% if t.internal_note %}
+                        <div class="small text-warning mt-1">
+                            <i class="fas fa-note-sticky me-1"></i> یادداشت داخلی: {{ t.internal_note }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.department == 'sales' %}
+                            <span class="badge bg-purple"><i class="fas fa-briefcase"></i> {{ t.dept_label }}</span>
+                        {% elif t.department == 'billing' %}
+                            <span class="badge bg-success-subtle"><i class="fas fa-coins"></i> {{ t.dept_label }}</span>
+                        {% elif t.department == 'management' %}
+                            <span class="badge bg-warning-subtle"><i class="fas fa-crown"></i> {{ t.dept_label }}</span>
+                        {% else %}
+                            <span class="badge bg-info-subtle"><i class="fas fa-screwdriver-wrench"></i> {{ t.dept_label }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.priority == 'urgent' %}
+                            <span class="badge bg-danger-subtle"><i class="fas fa-fire"></i> بحرانی</span>
+                        {% elif t.priority == 'high' %}
+                            <span class="badge bg-warning-subtle">فوری</span>
+                        {% elif t.priority == 'medium' %}
+                            <span class="badge bg-primary-subtle">متوسط</span>
+                        {% else %}
+                            <span class="badge bg-secondary-subtle">عادی</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.status == 'open' %}
+                            <span class="badge bg-warning-subtle"><span class="pulse-dot me-1" style="background:#F59E0B;"></span> منتظر پاسخ</span>
+                        {% elif t.status == 'pending' %}
+                            <span class="badge bg-info-subtle">در حال بررسی</span>
+                        {% elif t.status == 'answered' %}
+                            <span class="badge bg-success-subtle"><i class="fas fa-check"></i> پاسخ داده شده</span>
+                        {% else %}
+                            <span class="badge bg-secondary-subtle"><i class="fas fa-lock"></i> بسته شده</span>
+                        {% endif %}
+                    </td>
+                    <td class="font-mono text-muted" style="font-size: 0.76rem;">{{ t.updated_at }}</td>
+                    <td>
+                        <div class="d-flex gap-1">
+                            <a href="{{ url_for('ticket_detail_page', ticket_id=t.id) }}" class="btn btn-sm btn-primary">
+                                <i class="fas fa-reply"></i> مشاهده و پاسخ
+                            </a>
+                            <form method="POST" action="{{ url_for('delete_web_ticket', ticket_id=t.id) }}" class="m-0" onsubmit="return confirm('تیکت #{{ t.id }} حذف شود؟')">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted p-5">هیچ تیکتی با این مشخصات یافت نشد.</div>
+    {% endif %}
+</div>
+{% endblock %}

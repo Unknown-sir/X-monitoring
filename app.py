@@ -275,6 +275,32 @@ def init_db():
         )"""
     )
     c.execute(
+        """CREATE TABLE IF NOT EXISTS ticket_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id INTEGER NOT NULL,
+            sender_role TEXT NOT NULL DEFAULT 'user',
+            sender_name TEXT NOT NULL,
+            sender_badge TEXT DEFAULT NULL,
+            message TEXT NOT NULL,
+            attachment_filename TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL
+        )"""
+    )
+    c.execute("PRAGMA table_info(web_tickets)")
+    wt_cols = [info[1] for info in c.fetchall()]
+    for col_n, col_t in [
+        ("department", "TEXT DEFAULT 'technical'"),
+        ("priority", "TEXT DEFAULT 'medium'"),
+        ("server_id", "INTEGER DEFAULT NULL"),
+        ("internal_note", "TEXT DEFAULT NULL"),
+        ("updated_at", "TEXT DEFAULT NULL"),
+    ]:
+        if col_n not in wt_cols:
+            try:
+                c.execute(f"ALTER TABLE web_tickets ADD COLUMN {col_n} {col_t}")
+            except Exception:
+                pass
+    c.execute(
         """CREATE TABLE IF NOT EXISTS system_settings (
             key TEXT PRIMARY KEY,
             value TEXT,
@@ -347,6 +373,11 @@ def init_db():
     if "wallet_balance" not in ucols:
         try:
             c.execute("ALTER TABLE users ADD COLUMN wallet_balance INTEGER DEFAULT 0")
+        except Exception:
+            pass
+    if "permissions" not in ucols:
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL")
         except Exception:
             pass
 
@@ -423,6 +454,136 @@ def send_email(subject, body, to_email="admin@example.com"):
         logging.error(f"Failed to send email: {str(e)}")
 
 
+
+# ==============================================================================
+# Granular Module-Based RBAC Engine (اکانتینگ و تعیین سطح دسترسی تک‌تک بخش‌های پنل)
+# ==============================================================================
+PANEL_MODULES = [
+    # Staff / Admin / Support / Sales Modules
+    ("tickets_reply", "پاسخگویی و مدیریت تیکت‌ها (پشتیبانی و فروش)", "staff"),
+    ("payments_manage", "بررسی و تایید/رد فیش‌های واریزی", "staff"),
+    ("admin_stats", "مشاهده داشبورد آمار و چارت‌های مدیریتی", "staff"),
+    ("servers_manage", "مدیریت، ویرایش و پاور تمام سرورها", "staff"),
+    ("esxi_create_vm", "ساخت ماشین مجازی جدید در ESXi", "staff"),
+    ("esxi_hosts", "مدیریت هاست‌های ESXi", "staff"),
+    ("ip_pool", "مدیریت بانک آی‌پی (IP Pool)", "staff"),
+    ("plans_manage", "مدیریت پلن‌ها و تعرفه‌های فروش", "staff"),
+    ("assign_server", "اتصال سرور به کاربر", "staff"),
+    ("users_manage", "اکانتینگ، ساخت کاربر و تعیین سطح دسترسی", "staff"),
+    ("settings_manage", "تنظیمات کارت بانکی، توکن بات و پروکسی", "staff"),
+    ("events_view", "مشاهده لاگ و گزارش رویدادها", "staff"),
+    ("license_manage", "مدیریت و ثبت لایسنس", "staff"),
+    # Customer / Client Modules
+    ("client_dashboard", "داشبورد سرورهای شخصی و مانیتورینگ", "client"),
+    ("client_order", "سفارش و خرید سرور مجازی", "client"),
+    ("client_wallet", "کیف پول و ارسال فیش واریزی", "client"),
+    ("client_tickets", "ارسال تیکت پشتیبانی (مشتری)", "client"),
+]
+
+ALL_MODULE_KEYS = [m[0] for m in PANEL_MODULES]
+
+ROLE_DEFAULT_PERMS = {
+    "owner": list(ALL_MODULE_KEYS),
+    "admin": list(ALL_MODULE_KEYS),
+    "support": [
+        "tickets_reply",
+        "servers_manage",
+        "events_view",
+        "client_dashboard",
+    ],
+    "sales": [
+        "tickets_reply",
+        "payments_manage",
+        "plans_manage",
+        "assign_server",
+        "admin_stats",
+        "client_dashboard",
+    ],
+    "user": [
+        "client_dashboard",
+        "client_order",
+        "client_wallet",
+        "client_tickets",
+    ],
+}
+
+ROLE_LABELS_FA = {
+    "owner": "مالک اصلی (Owner)",
+    "admin": "مدیر کل (Admin)",
+    "support": "پشتیبان فنی (Support)",
+    "sales": "بخش فروش و مالی (Sales)",
+    "user": "مشتری (User)",
+}
+
+
+def get_user_permissions_set(user_id: int | None, role: str | None = None) -> set[str]:
+    if not user_id:
+        return set()
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT username, role, permissions FROM users WHERE id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return set()
+    uname, db_role, perms_raw = row[0], (row[1] or role or "user"), row[2]
+    # Owner and default main admin ('marmmr' or 'admin' when no custom restriction is set)
+    if db_role == "owner" or uname == "marmmr":
+        return set(ALL_MODULE_KEYS)
+    if perms_raw:
+        try:
+            parsed = json.loads(perms_raw)
+            if isinstance(parsed, list):
+                return set(parsed)
+        except Exception:
+            pass
+    return set(ROLE_DEFAULT_PERMS.get(db_role, ROLE_DEFAULT_PERMS["user"]))
+
+
+def current_user_has_perm(perm_key: str) -> bool:
+    if "user_id" not in session:
+        return False
+    perms = get_user_permissions_set(session["user_id"], session.get("role"))
+    return perm_key in perms
+
+
+def get_first_allowed_route(user_id: int, role: str) -> str:
+    perms = get_user_permissions_set(user_id, role)
+    priority_routes = [
+        ("client_dashboard", "dashboard"),
+        ("tickets_reply", "admin_tickets_page"),
+        ("payments_manage", "admin_payments_page"),
+        ("admin_stats", "admin_dashboard"),
+        ("servers_manage", "manage_servers"),
+        ("esxi_create_vm", "create_vm_page"),
+        ("esxi_hosts", "esxi_hosts_page"),
+        ("ip_pool", "ip_pool_page"),
+        ("plans_manage", "manage_plans_page"),
+        ("users_manage", "manage_users"),
+        ("settings_manage", "admin_settings_page"),
+        ("events_view", "events_page"),
+        ("client_order", "order_vps_page"),
+        ("client_wallet", "wallet_page"),
+        ("client_tickets", "tickets_page"),
+    ]
+    for p_key, endpoint_name in priority_routes:
+        if p_key in perms:
+            return url_for(endpoint_name)
+    return url_for("profile")
+
+
+def perm_required(perm_key: str):
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def wrapped(*args, **kwargs):
+            if not current_user_has_perm(perm_key):
+                return redirect(get_first_allowed_route(session["user_id"], session.get("role", "user")))
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -456,7 +617,7 @@ def owner_required(f):
 
 
 def user_can_access_server(user_id: int, role: str, server_id: int) -> bool:
-    if role in ["admin", "owner"]:
+    if role in ["admin", "owner"] or "servers_manage" in get_user_permissions_set(user_id, role):
         return True
     conn = get_db_connection()
     c = conn.cursor()
@@ -1067,15 +1228,32 @@ def inject_user_wallet():
             row = c.fetchone()
             if row and row[0] is not None:
                 balance = int(row[0])
-            if session.get("role") in ["admin", "owner"]:
+            open_tickets_count = 0
+            user_perms = get_user_permissions_set(session["user_id"], session.get("role"))
+            if "payments_manage" in user_perms:
                 c.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'")
                 pending_payments_count = c.fetchone()[0] or 0
+            if "tickets_reply" in user_perms:
+                c.execute("SELECT COUNT(*) FROM web_tickets WHERE status IN ('open', 'pending')")
+                open_tickets_count = c.fetchone()[0] or 0
+            else:
+                c.execute("SELECT COUNT(*) FROM web_tickets WHERE user_id=? AND status='answered'", (session["user_id"],))
+                open_tickets_count = c.fetchone()[0] or 0
             conn.close()
         except Exception:
-            pass
+            open_tickets_count = 0
+            user_perms = set()
+    else:
+        open_tickets_count = 0
+        user_perms = set()
     return {
         "user_wallet": balance,
         "pending_payments_count": pending_payments_count,
+        "open_tickets_count": open_tickets_count,
+        "user_perms": user_perms,
+        "has_perm": lambda k: (k in user_perms),
+        "panel_modules": PANEL_MODULES,
+        "role_labels_fa": ROLE_LABELS_FA,
         "sys_cfg": sys_cfg,
         "brand_name": "کلود کیوب",
         "brand_en": "Cloud Cube",
@@ -1136,7 +1314,7 @@ def login():
             session["username"] = user[1]
             session["role"] = user[3]
             logging.info(f"کاربر {username} وارد شد.")
-            return redirect(url_for("dashboard"))
+            return redirect(get_first_allowed_route(user[0], user[3]))
         conn.close()
         error_msg = "نام کاربری یا رمز عبور اشتباه است!"
     return render_template("login.html", error_msg=error_msg)
@@ -1207,7 +1385,7 @@ def profile():
 
 
 @app.route("/dashboard")
-@login_required
+@perm_required("client_dashboard")
 def dashboard():
     time_left, is_trial = get_remaining_time()
     if is_license_expired() and session.get("role") != "owner":
@@ -1263,7 +1441,7 @@ def dashboard():
 
 
 @app.route("/wallet", methods=["GET", "POST"])
-@login_required
+@perm_required("client_wallet")
 def wallet_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -1329,7 +1507,7 @@ def wallet_page():
 
 
 @app.route("/order_vps", methods=["GET", "POST"])
-@login_required
+@perm_required("client_order")
 def order_vps_page():
     plans = get_active_plans()
     selected_code = request.args.get("plan", "gold")
@@ -1598,29 +1776,110 @@ def user_ip_service_page(server_id):
     )
 
 
+# ==============================================================================
+# Comprehensive Ticketing & CRM System (Customer + Admin / Support / Sales / Billing)
+# ==============================================================================
+DEPT_LABELS = {
+    "technical": "پشتیبانی فنی و سرور",
+    "sales": "بخش فروش و مشاوره",
+    "billing": "امور مالی و فیش‌ها",
+    "management": "مدیریت کلود کیوب",
+}
+
+PRIORITY_LABELS = {
+    "low": "عادی",
+    "medium": "متوسط",
+    "high": "فوری",
+    "urgent": "بحرانی (اورژانسی)",
+}
+
+
 @app.route("/tickets", methods=["GET", "POST"])
 @login_required
 def tickets_page():
     conn = get_db_connection()
     c = conn.cursor()
+
     if request.method == "POST":
         subject = request.form.get("subject", "").strip()
         message = request.form.get("message", "").strip()
+        department = request.form.get("department", "technical").strip()
+        if department not in DEPT_LABELS:
+            department = "technical"
+        priority = request.form.get("priority", "medium").strip()
+        if priority not in PRIORITY_LABELS:
+            priority = "medium"
+        raw_srv = request.form.get("server_id", "").strip()
+        server_id = int(raw_srv) if raw_srv.isdigit() else None
+
+        attach_file = request.files.get("attachment_file")
+        attach_name = None
+        if attach_file and attach_file.filename:
+            ok_f, res_f = save_validated_receipt(attach_file, session["user_id"])
+            if ok_f:
+                attach_name = res_f
+
         if subject and message:
             now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
             c.execute(
-                "INSERT INTO web_tickets (user_id, username, subject, message, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)",
-                (session["user_id"], session.get("username", "User"), subject, message, now_iso),
+                """INSERT INTO web_tickets (
+                    user_id, username, subject, message, status, department, priority, server_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)""",
+                (session["user_id"], session.get("username", "User"), subject, message, department, priority, server_id, now_iso, now_iso),
+            )
+            tid = c.lastrowid
+            c.execute(
+                """INSERT INTO ticket_messages (
+                    ticket_id, sender_role, sender_name, sender_badge, message, attachment_filename, created_at
+                ) VALUES (?, 'user', ?, 'مشتری', ?, ?, ?)""",
+                (tid, session.get("username", "User"), message, attach_name, now_iso),
             )
             conn.commit()
             conn.close()
-            return redirect(url_for("tickets_page"))
 
+            # Notify Admin on Telegram via Proxy
+            cfg = get_system_settings()
+            if cfg.get("admin_chat_id"):
+                tg_api_request(
+                    "sendMessage",
+                    data={
+                        "chat_id": cfg["admin_chat_id"],
+                        "text": (
+                            f"🎫 *تیکت جدید #{tid} ثبت شد*\n\n"
+                            f"👤 *کاربر:* `{session.get('username')}`\n"
+                            f"🏢 *واحد:* {DEPT_LABELS.get(department, department)}\n"
+                            f"⚡ *اولویت:* {PRIORITY_LABELS.get(priority, priority)}\n"
+                            f"📌 *موضوع:* {subject}\n"
+                            f"💬 *پیام:* {message[:300]}"
+                        ),
+                        "parse_mode": "Markdown",
+                    },
+                )
+            return redirect(url_for("ticket_detail_page", ticket_id=tid))
+
+    # Fetch user's servers for the dropdown
     if session.get("role") in ["admin", "owner"]:
-        c.execute("SELECT id, user_id, username, subject, message, admin_reply, status, created_at FROM web_tickets ORDER BY id DESC")
+        c.execute("SELECT id, name, ip FROM servers ORDER BY id DESC")
     else:
         c.execute(
-            "SELECT id, user_id, username, subject, message, admin_reply, status, created_at FROM web_tickets WHERE user_id=? ORDER BY id DESC",
+            "SELECT s.id, s.name, s.ip FROM servers s JOIN user_servers us ON s.id = us.server_id WHERE us.user_id=? ORDER BY s.id DESC",
+            (session["user_id"],),
+        )
+    user_servers = [{"id": r[0], "name": r[1], "ip": r[2]} for r in c.fetchall()]
+
+    if current_user_has_perm("tickets_reply"):
+        c.execute(
+            """SELECT t.id, t.user_id, t.username, t.subject, t.message, t.admin_reply, t.status,
+                      t.department, t.priority, t.server_id, t.created_at, t.updated_at, s.name, s.ip
+               FROM web_tickets t LEFT JOIN servers s ON t.server_id = s.id
+               ORDER BY CASE WHEN t.status IN ('open', 'pending') THEN 0 ELSE 1 END ASC, t.id DESC"""
+        )
+    else:
+        c.execute(
+            """SELECT t.id, t.user_id, t.username, t.subject, t.message, t.admin_reply, t.status,
+                      t.department, t.priority, t.server_id, t.created_at, t.updated_at, s.name, s.ip
+               FROM web_tickets t LEFT JOIN servers s ON t.server_id = s.id
+               WHERE t.user_id=? ORDER BY t.id DESC""",
             (session["user_id"],),
         )
     tickets = [
@@ -1632,29 +1891,430 @@ def tickets_page():
             "message": r[4],
             "admin_reply": r[5],
             "status": r[6],
-            "created_at": r[7],
+            "department": r[7] or "technical",
+            "dept_label": DEPT_LABELS.get(r[7] or "technical", "پشتیبانی فنی"),
+            "priority": r[8] or "medium",
+            "prio_label": PRIORITY_LABELS.get(r[8] or "medium", "متوسط"),
+            "server_id": r[9],
+            "created_at": r[10],
+            "updated_at": r[11] or r[10],
+            "server_name": r[12],
+            "server_ip": r[13],
         }
         for r in c.fetchall()
     ]
     conn.close()
-    return render_template("tickets.html", tickets=tickets)
+    return render_template("tickets.html", tickets=tickets, user_servers=user_servers)
+
+
+@app.route("/admin_tickets", methods=["GET", "POST"])
+@perm_required("tickets_reply")
+def admin_tickets_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    flash_msg = request.args.get("msg")
+
+    # Allow Admin / Sales / Support to open a new ticket directly to any customer
+    if request.method == "POST":
+        action = request.form.get("action", "create_to_user")
+        if action == "create_to_user":
+            target_user_id = int(request.form.get("user_id", 0) or 0)
+            subject = request.form.get("subject", "").strip()
+            message = request.form.get("message", "").strip()
+            department = request.form.get("department", "sales").strip()
+            priority = request.form.get("priority", "high").strip()
+            sender_badge = request.form.get("sender_badge", "واحد فروش و پشتیبانی کلود کیوب").strip()
+
+            c.execute("SELECT id, username, telegram_chat_id FROM users WHERE id=?", (target_user_id,))
+            u_row = c.fetchone()
+            if u_row and subject and message:
+                now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                c.execute(
+                    """INSERT INTO web_tickets (
+                        user_id, username, subject, message, admin_reply, status, department, priority, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'answered', ?, ?, ?, ?)""",
+                    (u_row[0], u_row[1], subject, message, message, department, priority, now_iso, now_iso),
+                )
+                tid = c.lastrowid
+                c.execute(
+                    """INSERT INTO ticket_messages (
+                        ticket_id, sender_role, sender_name, sender_badge, message, created_at
+                    ) VALUES (?, 'admin', ?, ?, ?, ?)""",
+                    (tid, session.get("username", "admin"), sender_badge, message, now_iso),
+                )
+                conn.commit()
+                if u_row[2]:
+                    tg_api_request(
+                        "sendMessage",
+                        data={
+                            "chat_id": u_row[2],
+                            "text": (
+                                f"📩 *تیکت جدید #{tid} از طرف {sender_badge}*\n\n"
+                                f"📌 *موضوع:* {subject}\n"
+                                f"💬 *پیام:* {message}"
+                            ),
+                            "parse_mode": "Markdown",
+                        },
+                    )
+                conn.close()
+                return redirect(url_for("ticket_detail_page", ticket_id=tid))
+
+    # Filters
+    f_status = request.args.get("status", "all").strip()
+    f_dept = request.args.get("dept", "all").strip()
+    f_prio = request.args.get("priority", "all").strip()
+    search_q = request.args.get("q", "").strip()
+
+    # KPI Counts
+    c.execute("SELECT COUNT(*) FROM web_tickets")
+    total_count = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM web_tickets WHERE status IN ('open', 'pending')")
+    open_count = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM web_tickets WHERE department='technical'")
+    tech_count = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM web_tickets WHERE department IN ('sales', 'billing')")
+    sales_billing_count = c.fetchone()[0] or 0
+
+    query = """SELECT t.id, t.user_id, t.username, t.subject, t.message, t.admin_reply, t.status,
+                      t.department, t.priority, t.server_id, t.internal_note, t.created_at, t.updated_at,
+                      s.name, s.ip, u.wallet_balance
+               FROM web_tickets t
+               LEFT JOIN servers s ON t.server_id = s.id
+               LEFT JOIN users u ON t.user_id = u.id
+               WHERE 1=1"""
+    params = []
+    if f_status != "all":
+        query += " AND t.status=?"
+        params.append(f_status)
+    if f_dept != "all":
+        query += " AND t.department=?"
+        params.append(f_dept)
+    if f_prio != "all":
+        query += " AND t.priority=?"
+        params.append(f_prio)
+    if search_q:
+        query += " AND (t.username LIKE ? OR t.subject LIKE ? OR CAST(t.id AS TEXT) LIKE ? OR s.ip LIKE ?)"
+        like_q = f"%{search_q}%"
+        params.extend([like_q, like_q, like_q, like_q])
+
+    query += " ORDER BY CASE WHEN t.status IN ('open', 'pending') THEN 0 WHEN t.status='answered' THEN 1 ELSE 2 END ASC, t.id DESC"
+    c.execute(query, params)
+    tickets = [
+        {
+            "id": r[0],
+            "user_id": r[1],
+            "username": r[2],
+            "subject": r[3],
+            "message": r[4],
+            "admin_reply": r[5],
+            "status": r[6],
+            "department": r[7] or "technical",
+            "dept_label": DEPT_LABELS.get(r[7] or "technical", "پشتیبانی فنی"),
+            "priority": r[8] or "medium",
+            "prio_label": PRIORITY_LABELS.get(r[8] or "medium", "متوسط"),
+            "server_id": r[9],
+            "internal_note": r[10] or "",
+            "created_at": r[11],
+            "updated_at": r[12] or r[11],
+            "server_name": r[13],
+            "server_ip": r[14],
+            "user_wallet": r[15] or 0,
+        }
+        for r in c.fetchall()
+    ]
+
+    c.execute("SELECT id, username, COALESCE(wallet_balance, 0) FROM users WHERE username != 'marmmr' ORDER BY username ASC")
+    all_users = [{"id": r[0], "username": r[1], "wallet": r[2]} for r in c.fetchall()]
+    conn.close()
+
+    return render_template(
+        "admin_tickets.html",
+        tickets=tickets,
+        all_users=all_users,
+        total_count=total_count,
+        open_count=open_count,
+        tech_count=tech_count,
+        sales_billing_count=sales_billing_count,
+        f_status=f_status,
+        f_dept=f_dept,
+        f_prio=f_prio,
+        search_q=search_q,
+        flash_msg=flash_msg,
+    )
+
+
+@app.route("/tickets/<int:ticket_id>", methods=["GET", "POST"])
+@login_required
+def ticket_detail_page(ticket_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT t.id, t.user_id, t.username, t.subject, t.message, t.admin_reply, t.status,
+                  t.department, t.priority, t.server_id, t.internal_note, t.created_at, t.updated_at,
+                  s.name, s.ip
+           FROM web_tickets t LEFT JOIN servers s ON t.server_id = s.id
+           WHERE t.id=?""",
+        (ticket_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return redirect(url_for("tickets_page"))
+
+    is_staff = current_user_has_perm("tickets_reply")
+    if not is_staff and row[1] != session["user_id"]:
+        conn.close()
+        return "Forbidden", 403
+
+    ticket = {
+        "id": row[0],
+        "user_id": row[1],
+        "username": row[2],
+        "subject": row[3],
+        "message": row[4],
+        "admin_reply": row[5],
+        "status": row[6],
+        "department": row[7] or "technical",
+        "dept_label": DEPT_LABELS.get(row[7] or "technical", "پشتیبانی فنی"),
+        "priority": row[8] or "medium",
+        "prio_label": PRIORITY_LABELS.get(row[8] or "medium", "متوسط"),
+        "server_id": row[9],
+        "internal_note": row[10] or "",
+        "created_at": row[11],
+        "updated_at": row[12] or row[11],
+        "server_name": row[13],
+        "server_ip": row[14],
+    }
+
+    if request.method == "POST":
+        form_action = request.form.get("form_action", "reply")
+        now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
+        if form_action == "update_meta" and is_staff:
+            new_dept = request.form.get("department", ticket["department"]).strip()
+            new_prio = request.form.get("priority", ticket["priority"]).strip()
+            new_status = request.form.get("status", ticket["status"]).strip()
+            internal_note = request.form.get("internal_note", "").strip()
+            c.execute(
+                "UPDATE web_tickets SET department=?, priority=?, status=?, internal_note=?, updated_at=? WHERE id=?",
+                (new_dept, new_prio, new_status, internal_note, now_iso, ticket_id),
+            )
+            conn.commit()
+            conn.close()
+            return redirect(url_for("ticket_detail_page", ticket_id=ticket_id))
+
+        elif form_action == "close_ticket":
+            c.execute("UPDATE web_tickets SET status='closed', updated_at=? WHERE id=?", (now_iso, ticket_id))
+            conn.commit()
+            conn.close()
+            return redirect(url_for("ticket_detail_page", ticket_id=ticket_id))
+
+        elif form_action == "reopen_ticket":
+            c.execute("UPDATE web_tickets SET status='open', updated_at=? WHERE id=?", (now_iso, ticket_id))
+            conn.commit()
+            conn.close()
+            return redirect(url_for("ticket_detail_page", ticket_id=ticket_id))
+
+        elif form_action == "reply":
+            msg_text = request.form.get("message", "").strip()
+            attach_file = request.files.get("attachment_file")
+            attach_name = None
+            if attach_file and attach_file.filename:
+                ok_f, res_f = save_validated_receipt(attach_file, session["user_id"])
+                if ok_f:
+                    attach_name = res_f
+
+            if msg_text:
+                if is_staff:
+                    sender_role = "admin"
+                    sender_badge = request.form.get("sender_badge", "پشتیبانی فنی کلود کیوب").strip()
+                    next_status = request.form.get("next_status", "answered").strip()
+                    c.execute(
+                        "UPDATE web_tickets SET admin_reply=?, status=?, updated_at=? WHERE id=?",
+                        (msg_text, next_status, now_iso, ticket_id),
+                    )
+                else:
+                    sender_role = "user"
+                    sender_badge = "مشتری"
+                    c.execute(
+                        "UPDATE web_tickets SET status='open', updated_at=? WHERE id=?",
+                        (now_iso, ticket_id),
+                    )
+
+                c.execute(
+                    """INSERT INTO ticket_messages (
+                        ticket_id, sender_role, sender_name, sender_badge, message, attachment_filename, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (ticket_id, sender_role, session.get("username", "User"), sender_badge, msg_text, attach_name, now_iso),
+                )
+                conn.commit()
+
+                # Send Telegram notification to the other party via SOCKS5 proxy
+                if is_staff:
+                    c.execute("SELECT telegram_chat_id FROM users WHERE id=?", (ticket["user_id"],))
+                    ur = c.fetchone()
+                    if ur and ur[0]:
+                        tg_api_request(
+                            "sendMessage",
+                            data={
+                                "chat_id": ur[0],
+                                "text": (
+                                    f"💬 *پاسخ جدید به تیکت #{ticket_id} ({ticket['subject']})*\n"
+                                    f"👨‍💻 *پاسخ‌دهنده:* {sender_badge}\n\n"
+                                    f"{msg_text}"
+                                ),
+                                "parse_mode": "Markdown",
+                            },
+                        )
+                else:
+                    cfg = get_system_settings()
+                    if cfg.get("admin_chat_id"):
+                        tg_api_request(
+                            "sendMessage",
+                            data={
+                                "chat_id": cfg["admin_chat_id"],
+                                "text": (
+                                    f"📩 *پاسخ جدید مشتری در تیکت #{ticket_id}*\n"
+                                    f"👤 *کاربر:* `{ticket['username']}`\n"
+                                    f"📌 *موضوع:* {ticket['subject']}\n\n"
+                                    f"{msg_text[:300]}"
+                                ),
+                                "parse_mode": "Markdown",
+                            },
+                        )
+            conn.close()
+            return redirect(url_for("ticket_detail_page", ticket_id=ticket_id))
+
+    # Load all messages in thread (if legacy ticket has no rows in ticket_messages yet, synthesize initial messages)
+    c.execute(
+        "SELECT id, sender_role, sender_name, sender_badge, message, attachment_filename, created_at "
+        "FROM ticket_messages WHERE ticket_id=? ORDER BY id ASC",
+        (ticket_id,),
+    )
+    msg_rows = c.fetchall()
+    messages = [
+        {
+            "id": m[0],
+            "sender_role": m[1],
+            "sender_name": m[2],
+            "sender_badge": m[3] or ("پشتیبانی" if m[1] == "admin" else "مشتری"),
+            "message": m[4],
+            "attachment_filename": m[5],
+            "created_at": m[6],
+        }
+        for m in msg_rows
+    ]
+    if not messages:
+        messages.append(
+            {
+                "id": 0,
+                "sender_role": "user",
+                "sender_name": ticket["username"],
+                "sender_badge": "مشتری",
+                "message": ticket["message"],
+                "attachment_filename": None,
+                "created_at": ticket["created_at"],
+            }
+        )
+        if ticket["admin_reply"]:
+            messages.append(
+                {
+                    "id": 0,
+                    "sender_role": "admin",
+                    "sender_name": "Admin",
+                    "sender_badge": "پشتیبانی کلود کیوب",
+                    "message": ticket["admin_reply"],
+                    "attachment_filename": None,
+                    "created_at": ticket["updated_at"],
+                }
+            )
+
+    # Load 360-degree Customer CRM context for Admin / Support / Sales
+    customer_crm = None
+    if is_staff:
+        c.execute("SELECT id, username, role, telegram_chat_id, active, COALESCE(wallet_balance, 0) FROM users WHERE id=?", (ticket["user_id"],))
+        u_info = c.fetchone()
+        c.execute(
+            """SELECT s.id, s.name, s.ip, s.plan_name, s.traffic_usage, s.traffic_limit, s.active, s.is_suspended
+               FROM servers s JOIN user_servers us ON s.id = us.server_id WHERE us.user_id=? ORDER BY s.id DESC""",
+            (ticket["user_id"],),
+        )
+        c_servers = [
+            {
+                "id": sr[0],
+                "name": sr[1],
+                "ip": sr[2],
+                "plan_name": sr[3] or "VPS",
+                "usage": sr[4] or 0.0,
+                "limit": sr[5] or 0.0,
+                "active": bool(sr[6]),
+                "is_suspended": bool(sr[7]),
+            }
+            for sr in c.fetchall()
+        ]
+        c.execute(
+            "SELECT id, title, amount_toman, status, created_at FROM payment_requests WHERE user_id=? ORDER BY id DESC LIMIT 5",
+            (ticket["user_id"],),
+        )
+        c_payments = [
+            {"id": pr[0], "title": pr[1], "amount": pr[2], "status": pr[3], "created_at": pr[4]}
+            for pr in c.fetchall()
+        ]
+        customer_crm = {
+            "user_id": u_info[0] if u_info else ticket["user_id"],
+            "username": u_info[1] if u_info else ticket["username"],
+            "telegram_chat_id": u_info[3] if u_info else "",
+            "active": bool(u_info[4]) if u_info else True,
+            "wallet_balance": u_info[5] if u_info else 0,
+            "servers": c_servers,
+            "payments": c_payments,
+        }
+
+    conn.close()
+    return render_template(
+        "ticket_detail.html",
+        ticket=ticket,
+        messages=messages,
+        is_staff=is_staff,
+        customer_crm=customer_crm,
+    )
 
 
 @app.route("/tickets/<int:ticket_id>/reply", methods=["POST"])
-@admin_required
+@perm_required("tickets_reply")
 def reply_web_ticket(ticket_id):
     reply_text = request.form.get("admin_reply", "").strip()
+    sender_badge = request.form.get("sender_badge", "پشتیبانی کلود کیوب").strip()
     conn = get_db_connection()
     c = conn.cursor()
     if reply_text:
-        c.execute("UPDATE web_tickets SET admin_reply=?, status='answered' WHERE id=?", (reply_text, ticket_id))
+        now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+        c.execute("UPDATE web_tickets SET admin_reply=?, status='answered', updated_at=? WHERE id=?", (reply_text, now_iso, ticket_id))
+        c.execute(
+            """INSERT INTO ticket_messages (
+                ticket_id, sender_role, sender_name, sender_badge, message, created_at
+            ) VALUES (?, 'admin', ?, ?, ?, ?)""",
+            (ticket_id, session.get("username", "admin"), sender_badge, reply_text, now_iso),
+        )
         conn.commit()
     conn.close()
-    return redirect(url_for("tickets_page"))
+    return redirect(request.referrer or url_for("admin_tickets_page"))
+
+
+@app.route("/admin_tickets/<int:ticket_id>/delete", methods=["POST"])
+@perm_required("tickets_reply")
+def delete_web_ticket(ticket_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM ticket_messages WHERE ticket_id=?", (ticket_id,))
+    c.execute("DELETE FROM web_tickets WHERE id=?", (ticket_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_tickets_page", msg=f"تیکت #{ticket_id} حذف شد."))
 
 
 @app.route("/manage_plans", methods=["GET", "POST"])
-@admin_required
+@perm_required("plans_manage")
 def manage_plans_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -1694,7 +2354,7 @@ def manage_plans_page():
 
 
 @app.route("/admin_payments")
-@admin_required
+@perm_required("payments_manage")
 def admin_payments_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -1730,7 +2390,7 @@ def admin_payments_page():
 
 
 @app.route("/admin_payments/<int:req_id>/decide", methods=["POST"])
-@admin_required
+@perm_required("payments_manage")
 def admin_decide_payment(req_id):
     action = request.form.get("action", "").strip()
     reject_reason = request.form.get("reject_reason", "").strip()
@@ -1742,7 +2402,7 @@ def admin_decide_payment(req_id):
 
 
 @app.route("/admin_settings", methods=["GET", "POST"])
-@admin_required
+@perm_required("settings_manage")
 def admin_settings_page():
     msg = None
     err = None
@@ -1784,7 +2444,7 @@ def admin_settings_page():
 
 
 @app.route("/admin_dashboard")
-@admin_required
+@perm_required("admin_stats")
 def admin_dashboard():
     time_left, is_trial = get_remaining_time()
     if is_license_expired() and session.get("role") != "owner":
@@ -1833,7 +2493,7 @@ def admin_dashboard():
 
 # --- IP Pool Management ---
 @app.route("/ip_pool", methods=["GET", "POST"])
-@admin_required
+@perm_required("ip_pool")
 def ip_pool_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -1912,7 +2572,7 @@ def ip_pool_page():
 
 
 @app.route("/ip_pool/release/<int:ip_id>")
-@admin_required
+@perm_required("ip_pool")
 def release_ip_pool(ip_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -1923,7 +2583,7 @@ def release_ip_pool(ip_id):
 
 
 @app.route("/ip_pool/delete/<int:ip_id>")
-@admin_required
+@perm_required("ip_pool")
 def delete_ip_pool(ip_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -1935,7 +2595,7 @@ def delete_ip_pool(ip_id):
 
 # --- ESXi Hosts Management ---
 @app.route("/esxi_hosts", methods=["GET", "POST"])
-@admin_required
+@perm_required("esxi_hosts")
 def esxi_hosts_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -1979,7 +2639,7 @@ def esxi_hosts_page():
 
 
 @app.route("/esxi_hosts/test/<int:host_id>")
-@admin_required
+@perm_required("esxi_hosts")
 def test_esxi_host(host_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -1993,7 +2653,7 @@ def test_esxi_host(host_id):
 
 
 @app.route("/esxi_hosts/delete/<int:host_id>")
-@admin_required
+@perm_required("esxi_hosts")
 def delete_esxi_host(host_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2006,7 +2666,7 @@ def delete_esxi_host(host_id):
 
 # --- Automatic VM Creation on ESXi with IP Pool & Cloud-Init ---
 @app.route("/create_vm", methods=["GET", "POST"])
-@admin_required
+@perm_required("esxi_create_vm")
 def create_vm_page():
     conn = get_db_connection()
     c = conn.cursor()
@@ -2185,7 +2845,7 @@ def create_vm_page():
 
 # --- Rebuild Server on ESXi (with Cloud-Init IP Re-injection) ---
 @app.route("/server/<int:server_id>/rebuild", methods=["GET", "POST"])
-@admin_required
+@perm_required("servers_manage")
 def rebuild_vm_action(server_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2360,7 +3020,7 @@ def delete_snapshot_action(server_id, snap_id):
 
 # --- Change IP & Add Secondary IP (supports IP Pool) ---
 @app.route("/server/<int:server_id>/change_ip", methods=["GET", "POST"])
-@admin_required
+@perm_required("servers_manage")
 def change_ip_page(server_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2455,7 +3115,7 @@ def change_ip_page(server_id):
 
 # --- Toggle Network Suspension on ESXi ---
 @app.route("/server/<int:server_id>/toggle_network")
-@admin_required
+@perm_required("servers_manage")
 def toggle_network_action(server_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2542,7 +3202,7 @@ def recharge_traffic_action(server_id):
 
 
 @app.route("/add_server", methods=["GET", "POST"])
-@admin_required
+@perm_required("servers_manage")
 def add_server_page():
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2572,30 +3232,55 @@ def add_server_page():
 
 
 @app.route("/add_user", methods=["GET", "POST"])
-@admin_required
+@perm_required("users_manage")
 def add_user_page():
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
+    error_msg = None
     if request.method == "POST":
         username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
+        password = request.form.get("password", "").strip()
         role = request.form.get("role", "user").strip()
+        if role not in ("user", "support", "sales", "admin"):
+            role = "user"
         telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
-        if role != "owner" and username and password:
+        try:
+            wallet_balance = int(request.form.get("wallet_balance", 0) or 0)
+        except ValueError:
+            wallet_balance = 0
+
+        if "has_perm_matrix" in request.form:
+            selected_perms = [p for p in request.form.getlist("perms") if p in ALL_MODULE_KEYS]
+        else:
+            selected_perms = list(ROLE_DEFAULT_PERMS.get(role, ROLE_DEFAULT_PERMS["user"]))
+        perms_json = json.dumps(selected_perms)
+
+        if username and password and username != "marmmr":
             conn = get_db_connection()
             c = conn.cursor()
-            c.execute(
-                "INSERT OR IGNORE INTO users (username, password, role, telegram_chat_id, active) VALUES (?, ?, ?, ?, 1)",
-                (username, generate_password_hash(password), role, telegram_chat_id),
-            )
-            conn.commit()
-            conn.close()
-        return redirect(url_for("admin_dashboard"))
-    return render_template("add_user.html")
+            c.execute("SELECT id FROM users WHERE username=?", (username,))
+            if c.fetchone():
+                conn.close()
+                error_msg = "این نام کاربری قبلاً در سیستم ثبت شده است."
+            else:
+                c.execute(
+                    "INSERT INTO users (username, password, role, telegram_chat_id, active, wallet_balance, permissions) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?)",
+                    (username, generate_password_hash(password), role, telegram_chat_id, wallet_balance, perms_json),
+                )
+                conn.commit()
+                conn.close()
+                return redirect(url_for("manage_users"))
+    return render_template(
+        "add_user.html",
+        panel_modules=PANEL_MODULES,
+        role_presets_json=json.dumps(ROLE_DEFAULT_PERMS),
+        error_msg=error_msg,
+    )
 
 
 @app.route("/assign_server", methods=["GET", "POST"])
-@admin_required
+@perm_required("assign_server")
 def assign_server_page():
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2629,7 +3314,7 @@ def assign_server_page():
 
 
 @app.route("/unassign_server/<int:user_id>/<int:server_id>")
-@admin_required
+@perm_required("assign_server")
 def unassign_server(user_id, server_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -2641,7 +3326,7 @@ def unassign_server(user_id, server_id):
 
 
 @app.route("/delete_server/<int:server_id>")
-@admin_required
+@perm_required("servers_manage")
 def delete_server(server_id):
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2659,7 +3344,7 @@ def delete_server(server_id):
 
 
 @app.route("/manage_servers", methods=["GET", "POST"])
-@admin_required
+@perm_required("servers_manage")
 def manage_servers():
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2736,7 +3421,7 @@ def update_server_limit(server_id):
 
 
 @app.route("/reset_traffic/<int:server_id>")
-@admin_required
+@perm_required("servers_manage")
 def reset_traffic(server_id):
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2778,46 +3463,66 @@ def reset_traffic(server_id):
 
 
 @app.route("/manage_users", methods=["GET", "POST"])
-@admin_required
+@perm_required("users_manage")
 def manage_users():
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
     conn = get_db_connection()
     c = conn.cursor()
     if request.method == "POST" and "edit_user_id" in request.form:
-        user_id = request.form["edit_user_id"]
+        user_id = int(request.form["edit_user_id"])
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
         role = request.form.get("role", "user").strip()
+        if role not in ("user", "support", "sales", "admin"):
+            role = "user"
         telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
         try:
             wallet_balance = int(request.form.get("wallet_balance", 0) or 0)
         except ValueError:
             wallet_balance = 0
 
+        if "has_perm_matrix" in request.form:
+            selected_perms = [p for p in request.form.getlist("perms") if p in ALL_MODULE_KEYS]
+        else:
+            selected_perms = list(ROLE_DEFAULT_PERMS.get(role, ROLE_DEFAULT_PERMS["user"]))
+        perms_json = json.dumps(selected_perms)
+
         if role != "owner" and username != "marmmr":
             if password:
                 c.execute(
-                    "UPDATE users SET username=?, password=?, role=?, telegram_chat_id=?, wallet_balance=? WHERE id=?",
-                    (username, generate_password_hash(password), role, telegram_chat_id, wallet_balance, user_id),
+                    "UPDATE users SET username=?, password=?, role=?, telegram_chat_id=?, wallet_balance=?, permissions=? WHERE id=?",
+                    (username, generate_password_hash(password), role, telegram_chat_id, wallet_balance, perms_json, user_id),
                 )
             else:
                 c.execute(
-                    "UPDATE users SET username=?, role=?, telegram_chat_id=?, wallet_balance=? WHERE id=?",
-                    (username, role, telegram_chat_id, wallet_balance, user_id),
+                    "UPDATE users SET username=?, role=?, telegram_chat_id=?, wallet_balance=?, permissions=? WHERE id=?",
+                    (username, role, telegram_chat_id, wallet_balance, perms_json, user_id),
                 )
             conn.commit()
         conn.close()
         return redirect(url_for("manage_users"))
 
-    c.execute("SELECT id, username, role, telegram_chat_id, active, COALESCE(wallet_balance, 0) FROM users WHERE username != 'marmmr'")
-    users = c.fetchall()
+    c.execute("SELECT id, username, role, telegram_chat_id, active, COALESCE(wallet_balance, 0), permissions FROM users WHERE username != 'marmmr' ORDER BY id ASC")
+    raw_users = c.fetchall()
     conn.close()
-    return render_template("manage_users.html", users=users)
+
+    users = []
+    for r in raw_users:
+        uid, uname, urole, utg, uact, uwal, uperms_raw = r
+        u_perm_set = get_user_permissions_set(uid, urole)
+        users.append((uid, uname, urole, utg, uact, uwal, u_perm_set))
+
+    return render_template(
+        "manage_users.html",
+        users=users,
+        panel_modules=PANEL_MODULES,
+        role_presets_json=json.dumps(ROLE_DEFAULT_PERMS),
+    )
 
 
 @app.route("/toggle_server/<int:server_id>")
-@admin_required
+@perm_required("servers_manage")
 def toggle_server(server_id):
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2843,7 +3548,7 @@ def toggle_server(server_id):
 
 
 @app.route("/delete_user/<int:user_id>")
-@admin_required
+@perm_required("users_manage")
 def delete_user(user_id):
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2861,7 +3566,7 @@ def delete_user(user_id):
 
 
 @app.route("/toggle_user/<int:user_id>")
-@admin_required
+@perm_required("users_manage")
 def toggle_user(user_id):
     if is_license_expired() and session.get("role") != "owner":
         return render_template("admin_expired.html")
@@ -2980,7 +3685,7 @@ def api_server_series(server_id):
 
 
 @app.route("/events")
-@admin_required
+@perm_required("events_view")
 def events_page():
     conn = get_db_connection()
     c = conn.cursor()

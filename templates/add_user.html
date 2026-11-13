@@ -1,51 +1,120 @@
 {% extends "base.html" %}
-{% block title %}افزودن کاربر جدید | XMonitor{% endblock %}
+{% block title %}ساخت کاربر و تعیین سطح دسترسی (اکانتینگ) | کلود کیوب{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-7">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
-                    <i class="fas fa-user-plus text-primary"></i>
-                    افزودن کاربر جدید
-                </h2>
-                <p class="text-muted small mb-0">ایجاد حساب کاربری برای مشتریان یا مدیران پنل</p>
-            </div>
-            <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                <i class="fas fa-arrow-right me-1"></i> بازگشت
-            </a>
-        </div>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-user-plus text-primary me-1"></i> ساخت کاربر جدید و تعیین سطح دسترسی (اکانتینگ)
+        </h1>
+        <span class="small text-muted">ایجاد اکانت پشتیبان فنی، کارشناس فروش، مدیر یا مشتری با قابلیت فعال/غیرفعال کردن تک‌تک بخش‌های پنل</span>
+    </div>
+    <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right"></i> بازگشت به اکانتینگ و لیست کاربران
+    </a>
+</div>
 
-        <div class="card">
-            <div class="card-body p-4">
-                <form method="POST" action="{{ url_for('add_user_page') }}" class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">نام کاربری</label>
-                        <input type="text" name="username" placeholder="مثلاً: client_01" class="form-control" required>
+{% if error_msg %}
+<div class="alert alert-danger"><i class="fas fa-circle-exclamation me-1"></i> {{ error_msg }}</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('add_user_page') }}" class="anim-fade-up">
+    <input type="hidden" name="has_perm_matrix" value="1">
+    <div class="row g-4">
+        <!-- Basic User Credentials & Role Preset -->
+        <div class="col-12 col-xl-4">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.05rem;"><i class="fas fa-id-badge text-primary me-1"></i> مشخصات حساب و نقش پایه</h3>
+                <div class="d-flex flex-column gap-3">
+                    <div>
+                        <label class="form-label">نام کاربری (Username)</label>
+                        <input type="text" name="username" class="form-control font-mono" placeholder="مثلاً support_ali یا sales_sara" required autofocus>
                     </div>
-                    <div class="col-md-6">
+                    <div>
                         <label class="form-label">رمز عبور</label>
-                        <input type="password" name="password" placeholder="••••••••" class="form-control" required>
+                        <input type="text" name="password" class="form-control font-mono" placeholder="رمز عبور ورود به پنل" required>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">نقش کاربری</label>
-                        <select name="role" class="form-select">
-                            <option value="user">کاربر عادی (User)</option>
-                            <option value="admin">مدیر (Admin)</option>
+                    <div>
+                        <label class="form-label">نقش سازمانی (اعمال خودکار پیش‌فرض دسترسی‌ها)</label>
+                        <select id="roleSelectNew" name="role" class="form-select" onchange="applyRolePresetNew(this.value)">
+                            <option value="support" selected>👨‍💻 پشتیبان فنی (Support)</option>
+                            <option value="sales">💼 بخش فروش و مالی (Sales)</option>
+                            <option value="admin">👑 مدیر کامل (Admin)</option>
+                            <option value="user">👤 مشتری عادی (Customer)</option>
                         </select>
                     </div>
-                    <div class="col-md-6">
+                    <div>
+                        <label class="form-label">موجودی اولیه کیف پول (تومان)</label>
+                        <input type="number" name="wallet_balance" value="0" class="form-control font-mono">
+                    </div>
+                    <div>
                         <label class="form-label">چت آیدی تلگرام (اختیاری)</label>
-                        <input type="text" name="telegram_chat_id" placeholder="123456789" class="form-control font-mono">
+                        <input type="text" name="telegram_chat_id" class="form-control font-mono" placeholder="123456789">
                     </div>
-                    <div class="col-12 mt-3">
-                        <button type="submit" class="btn btn-primary rounded-pill px-4">
-                            <i class="fas fa-plus me-1"></i> ایجاد کاربر
-                        </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 17-Module Granular Permission Matrix -->
+        <div class="col-12 col-xl-8">
+            <div class="card p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
+                    <div>
+                        <h3 class="fw-bold m-0" style="font-size: 1.05rem;">
+                            <i class="fas fa-sliders text-gold me-1"></i> دسترسی به بخش‌های پنل (فعال / غیرفعال)
+                        </h3>
+                        <span class="small text-muted">هر گزینه‌ای که فعال باشد برای این کاربر نمایش داده شده و قابل استفاده است؛ گزینه‌های غیرفعال کاملاً مخفی و مسدود می‌شوند</span>
                     </div>
-                </form>
+                    <div class="d-flex gap-1">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllNewPerms(true)">فعال کردن همه</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllNewPerms(false)">غیرفعال کردن همه</button>
+                    </div>
+                </div>
+
+                <div class="small fw-bold text-gold mb-2"><i class="fas fa-shield-halved me-1"></i> بخش‌های مدیریتی، پشتیبانی، فروش و زیرساخت:</div>
+                <div class="cc-perm-grid mb-4">
+                    {% for m_key, m_label, m_group in panel_modules if m_group == 'staff' %}
+                    <label class="cc-perm-item staff-mod">
+                        <input type="checkbox" name="perms" value="{{ m_key }}" class="perm-chk-new">
+                        <span>{{ m_label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <div class="small fw-bold text-info mb-2"><i class="fas fa-layer-group me-1"></i> بخش‌های پنل کاربری و سفارش سرویس:</div>
+                <div class="cc-perm-grid">
+                    {% for m_key, m_label, m_group in panel_modules if m_group == 'client' %}
+                    <label class="cc-perm-item client-mod">
+                        <input type="checkbox" name="perms" value="{{ m_key }}" class="perm-chk-new">
+                        <span>{{ m_label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-4 pt-3 border-top text-end">
+                    <button type="submit" class="btn btn-lg btn-primary rounded-pill px-5">
+                        <i class="fas fa-check-circle"></i> ایجاد کاربر با دسترسی‌های انتخاب‌شده
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-</div>
+</form>
+
+<script>
+const ROLE_PRESETS_NEW = {{ role_presets_json|safe }};
+function applyRolePresetNew(role) {
+    const allowed = new Set(ROLE_PRESETS_NEW[role] || []);
+    document.querySelectorAll(".perm-chk-new").forEach(function(cb) {
+        cb.checked = allowed.has(cb.value);
+    });
+}
+function toggleAllNewPerms(state) {
+    document.querySelectorAll(".perm-chk-new").forEach(function(cb) {
+        cb.checked = state;
+    });
+}
+document.addEventListener("DOMContentLoaded", function() {
+    applyRolePresetNew(document.getElementById("roleSelectNew").value);
+});
+</script>
 {% endblock %}
