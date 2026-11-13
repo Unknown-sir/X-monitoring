@@ -1,77 +1,97 @@
 {% extends "base.html" %}
-{% block title %}خرید سرور مجازی جدید | کلود کیوب{% endblock %}
+{% block title %}سفارش سرور مجازی | کلود کیوب{% endblock %}
 {% block content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-    <div>
-        <h1 class="fw-extrabold mb-1 d-flex align-items-center gap-2" style="font-size: 1.4rem;">
-            <i class="fas fa-cart-plus text-gold"></i>
-            <span>فروشگاه سرور مجازی ابری کلود کیوب (تحویل آنی ESXi)</span>
-        </h1>
-        <p class="text-muted small mb-0">پلن مورد نظر خود را انتخاب کنید؛ سرور مجازی شما به همراه آی‌پی اختصاصی به صورت خودکار ساخته و تحویل می‌شود.</p>
-    </div>
-    <a href="{{ url_for('wallet_page') }}" class="btn btn-outline-primary rounded-pill px-3">
-        <i class="fas fa-wallet text-gold"></i>
-        <span>موجودی فعلی: {{ "{:,}".format(user_wallet|default(0)) }} تومان (افزایش اعتبار)</span>
-    </a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+        <i class="fas fa-rocket text-primary me-1"></i> سفارش سرور مجازی ESXi
+    </h1>
+    <span class="badge bg-purple font-mono">موجودی کیف پول: {{ "{:,}".format(user_wallet|default(0)) }} تومان</span>
 </div>
 
 {% if error_msg %}
-<div class="alert alert-danger d-flex align-items-center justify-content-between flex-wrap gap-2">
-    <div><i class="fas fa-circle-exclamation me-1"></i> {{ error_msg }}</div>
-    <a href="{{ url_for('wallet_page') }}" class="btn btn-sm btn-gold rounded-pill">شارژ فوری کیف پول</a>
-</div>
+<div class="alert alert-danger"><i class="fas fa-circle-exclamation me-1"></i> {{ error_msg }}</div>
+{% endif %}
+{% if success_msg %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ success_msg }}</div>
 {% endif %}
 
-<form method="POST" action="{{ url_for('order_vps_page') }}">
-    <div class="row g-3 mb-4">
+<form method="POST" action="{{ url_for('order_vps_page') }}" enctype="multipart/form-data">
+    <!-- Plan Cards -->
+    <div class="row g-3 mb-4 anim-fade-up delay-1">
         {% for plan in plans %}
         <div class="col-12 col-md-6 col-xl-3">
             <label class="cc-plan-card {% if plan.code == selected_code %}popular{% endif %}" style="cursor: pointer;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="badge {% if plan.code == selected_code %}bg-gold{% else %}bg-primary-subtle{% endif %}">{{ plan.badge or plan.name_en }}</span>
-                    <input type="radio" name="plan_id" value="{{ plan.id }}" {% if plan.code == selected_code or loop.first %}checked{% endif %} style="accent-color: #d4af37; transform: scale(1.25);">
+                    <span class="badge {% if plan.code == selected_code %}bg-purple{% else %}bg-primary-subtle{% endif %}">{{ plan.badge or plan.name_en }}</span>
+                    <input type="radio" name="plan_id" value="{{ plan.id }}" {% if plan.code == selected_code or loop.first %}checked{% endif %} style="accent-color: #8B5CF6; transform: scale(1.2);">
                 </div>
-                <h3 class="fw-bold mb-1" style="font-size: 1.2rem;">{{ plan.name_fa }}</h3>
-                <div class="cc-plan-price" style="font-size: 1.4rem;">
+                <h3 class="fw-bold mb-1" style="font-size: 1.15rem;">{{ plan.name_fa }}</h3>
+                <div class="cc-plan-price" style="font-size: 1.35rem;">
                     {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted">تومان</span>
                 </div>
                 <ul class="cc-spec-list mb-0">
-                    <li><span class="text-muted">پردازنده</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
-                    <li><span class="text-muted">حافظه رم</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
-                    <li><span class="text-muted">دیسک پرسرعت</span><strong class="font-mono">{{ plan.disk_gb }} GB SSD</strong></li>
-                    <li><span class="text-muted">ترافیک ماهانه</span><strong class="font-mono text-gold">{{ plan.traffic_gib|int }} GiB</strong></li>
+                    <li><span class="text-muted">CPU</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
+                    <li><span class="text-muted">RAM</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
+                    <li><span class="text-muted">SSD</span><strong class="font-mono">{{ plan.disk_gb }} GB</strong></li>
+                    <li><span class="text-muted">ترافیک</span><strong class="font-mono text-gold">{{ plan.traffic_gib|int }} GiB</strong></li>
                 </ul>
             </label>
         </div>
         {% endfor %}
     </div>
 
-    <div class="card p-4">
-        <h3 class="fw-bold mb-3" style="font-size: 1.15rem;"><i class="fas fa-gears text-primary me-1"></i> مشخصات سیستم‌عامل و دسترسی سرور</h3>
-        <div class="row g-3">
-            <div class="col-12 col-md-4">
-                <label class="form-label">نام سرور / Hostname (انگلیسی)</label>
-                <input type="text" name="vm_name" class="form-control font-mono" placeholder="مثلاً my-ubuntu-vps" required>
-            </div>
-            <div class="col-12 col-md-4">
-                <label class="form-label">رمز عبور کاربر root (حداقل ۶ کاراکتر)</label>
-                <input type="text" name="root_password" class="form-control font-mono" placeholder="یک رمز عبور قوی وارد کنید" required>
-            </div>
-            <div class="col-12 col-md-4">
-                <label class="form-label">سیستم‌عامل و شبکه</label>
-                <input type="text" class="form-control" value="Ubuntu 22.04 LTS + Automatic Netplan IP" disabled>
+    <!-- Server Config & Payment Receipt Section -->
+    <div class="row g-4 anim-fade-up delay-2">
+        <div class="col-12 col-xl-6">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-terminal text-primary me-1"></i> مشخصات سرور</h3>
+                <div class="d-flex flex-column gap-3">
+                    <div>
+                        <label class="form-label">نام سرور / Hostname (انگلیسی)</label>
+                        <input type="text" name="vm_name" class="form-control font-mono" placeholder="ubuntu-srv1" required>
+                    </div>
+                    <div>
+                        <label class="form-label">رمز عبور root (حداقل ۶ کاراکتر)</label>
+                        <input type="text" name="root_password" class="form-control font-mono" placeholder="StrongPassword123" required>
+                    </div>
+                    <div>
+                        <label class="form-label">روش پرداخت</label>
+                        <select name="pay_method" class="form-select" onchange="document.getElementById('vpsReceiptBox').style.display = (this.value === 'receipt' ? 'block' : 'none');">
+                            <option value="receipt" selected>واریز کارت به کارت و بارگذاری فیش (تایید ادمین)</option>
+                            <option value="wallet">کسر از موجودی تاییدشده کیف پول ({{ "{:,}".format(user_wallet|default(0)) }} تومان)</option>
+                        </select>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mt-4 pt-3 border-top">
-            <div class="small text-muted">
-                <i class="fas fa-shield-check text-primary me-1"></i>
-                بلافاصله پس از ثبت سفارش، اولین آی‌پی آزاد از بانک آی‌پی اختصاص یافته و سرور روشن می‌شود.
+
+        <div class="col-12 col-xl-6" id="vpsReceiptBox">
+            <div class="card p-4 h-100">
+                <div class="cc-bank-card mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>{{ sys_cfg.bank_name }}</span>
+                        <span>{{ sys_cfg.bank_card_holder }}</span>
+                    </div>
+                    <div class="font-mono fw-extrabold my-2" style="font-size: 1.3rem; letter-spacing: 1.5px;">{{ sys_cfg.bank_card_number }}</div>
+                    <div class="small font-mono text-muted">{{ sys_cfg.bank_sheba }}</div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">کد پیگیری واریز</label>
+                    <input type="text" name="tracking_note" class="form-control font-mono" placeholder="کد پیگیری یا ۴ رقم آخر کارت">
+                </div>
+                <div class="cc-upload-zone">
+                    <label class="form-label mb-1"><i class="fas fa-image text-primary me-1"></i> تصویر فیش واریزی</label>
+                    <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mt-1">
+                </div>
             </div>
-            <button type="submit" class="btn btn-lg btn-gold rounded-pill px-5">
-                <i class="fas fa-bolt"></i>
-                <span>پرداخت از کیف پول و ساخت آنی سرور</span>
-            </button>
         </div>
+    </div>
+
+    <div class="mt-4 text-end">
+        <button type="submit" class="btn btn-lg btn-primary rounded-pill px-5">
+            <i class="fas fa-check-circle"></i>
+            <span>ثبت سفارش سرور مجازی</span>
+        </button>
     </div>
 </form>
 {% endblock %}

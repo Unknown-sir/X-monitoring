@@ -1,16 +1,12 @@
 {% extends "base.html" %}
-{% block title %}خدمات آی‌پی سرور {{ server.name }} | کلود کیوب{% endblock %}
+{% block title %}خدمات آی‌پی {{ server.name }} | کلود کیوب{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-    <div>
-        <h1 class="fw-extrabold mb-1" style="font-size: 1.35rem;">
-            <i class="fas fa-network-wired text-gold me-1"></i>
-            <span>مدیریت و خرید آی‌پی برای سرور «{{ server.name }}»</span>
-        </h1>
-        <p class="text-muted small mb-0">تغییر آی‌پی اصلی یا افزودن آی‌پی اضافه به صورت کاملاً اتوماتیک از بانک آی‌پی کلود کیوب با اعمال آنی در Netplan</p>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-4 anim-fade-up">
+    <h1 class="fw-extrabold m-0" style="font-size: 1.3rem;">
+        <i class="fas fa-globe text-primary me-1"></i> تغییر یا افزودن آی‌پی — <span class="font-mono text-gold">{{ server.name }}</span>
+    </h1>
     <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
-        <i class="fas fa-arrow-right"></i> بازگشت به سرورهای من
+        <i class="fas fa-arrow-right"></i> بازگشت
     </a>
 </div>
 
@@ -21,58 +17,79 @@
 <div class="alert alert-success">{{ success_msg }}</div>
 {% endif %}
 
-<div class="row g-4">
+<div class="row g-4 anim-fade-up delay-1">
     <div class="col-12 col-md-5">
         <div class="card p-4 h-100">
-            <h3 class="fw-bold mb-3" style="font-size: 1.1rem;">وضعیت فعلی شبکه سرور</h3>
+            <h3 class="fw-bold mb-3" style="font-size: 1.05rem;">مشخصات فعلی شبکه سرور</h3>
             <div class="d-flex flex-column gap-2 small">
-                <div class="d-flex justify-content-between py-2 border-bottom" style="border-color: var(--border-subtle) !important;">
-                    <span class="text-muted">آی‌پی اصلی (Primary IPv4):</span>
+                <div class="d-flex justify-content-between py-2 border-top">
+                    <span class="text-muted">آی‌پی اصلی:</span>
                     <strong class="font-mono text-primary">{{ server.ip }}/{{ server.netmask }}</strong>
                 </div>
-                <div class="d-flex justify-content-between py-2 border-bottom" style="border-color: var(--border-subtle) !important;">
-                    <span class="text-muted">گیت‌وی (Gateway):</span>
+                <div class="d-flex justify-content-between py-2 border-top">
+                    <span class="text-muted">گیت‌وی:</span>
                     <strong class="font-mono">{{ server.gateway or '185.42.212.129' }}</strong>
                 </div>
-                <div class="d-flex justify-content-between py-2 border-bottom" style="border-color: var(--border-subtle) !important;">
-                    <span class="text-muted">آی‌پی‌های اضافه (Secondary IPs):</span>
-                    <strong class="font-mono text-gold">{{ server.extra_ips or 'ندارد' }}</strong>
+                <div class="d-flex justify-content-between py-2 border-top">
+                    <span class="text-muted">آی‌پی‌های اضافه:</span>
+                    <strong class="font-mono text-gold">{{ server.extra_ips or '—' }}</strong>
                 </div>
-                <div class="d-flex justify-content-between py-2">
-                    <span class="text-muted">آدرس IPv6:</span>
-                    <strong class="font-mono">{{ server.ipv6 or 'غیرفعال' }}</strong>
-                </div>
+            </div>
+
+            <div class="cc-bank-card mt-4">
+                <div class="small text-gold mb-1">{{ sys_cfg.bank_name }} • {{ sys_cfg.bank_card_holder }}</div>
+                <div class="font-mono fw-extrabold my-1" style="font-size: 1.2rem;">{{ sys_cfg.bank_card_number }}</div>
+                <div class="small font-mono text-muted">تعرفه خدمات آی‌پی: ۳۴۰,۰۰۰ تومان</div>
             </div>
         </div>
     </div>
 
     <div class="col-12 col-md-7">
         <div class="card p-4 h-100">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h3 class="fw-bold m-0" style="font-size: 1.1rem;">انجام عملیات خودکار آی‌پی</h3>
-                <span class="badge bg-gold">تعرفه: {{ "{:,}".format(ip_service_fee) }} تومان</span>
-            </div>
-
-            <form method="POST" action="{{ url_for('user_ip_service_page', server_id=server.id) }}" class="d-flex flex-column gap-3">
-                <label class="p-3 rounded d-flex align-items-start gap-3" style="background: rgba(0, 96, 57, 0.14); border: 1px solid var(--border-color); cursor: pointer;">
-                    <input type="radio" name="op_type" value="change_ip" checked style="margin-top: 4px; accent-color: #10b981;">
-                    <div>
-                        <div class="fw-bold">تعویض آی‌پی اصلی سرور (Change Primary IP)</div>
-                        <div class="small text-muted">آی‌پی فعلی ({{ server.ip }}) آزاد شده و یک آی‌پی جدید از بانک آی‌پی کلود کیوب جایگزین آن در فایل Netplan می‌شود.</div>
+            <form method="POST" action="{{ url_for('user_ip_service_page', server_id=server.id) }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+                <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                        <label class="p-3 rounded d-flex align-items-center gap-2 w-100" style="background: rgba(139,92,246,0.12); border: 1px solid var(--border-color); cursor: pointer;">
+                            <input type="radio" name="op_type" value="change_ip" checked style="accent-color: #8B5CF6;">
+                            <div>
+                                <div class="fw-bold small">تعویض آی‌پی اصلی</div>
+                                <div class="small text-muted" style="font-size: 0.75rem;">۳۴۰,۰۰۰ تومان</div>
+                            </div>
+                        </label>
                     </div>
-                </label>
-
-                <label class="p-3 rounded d-flex align-items-start gap-3" style="background: rgba(212, 175, 55, 0.08); border: 1px solid var(--border-color); cursor: pointer;">
-                    <input type="radio" name="op_type" value="add_extra_ip" style="margin-top: 4px; accent-color: #d4af37;">
-                    <div>
-                        <div class="fw-bold text-gold">خرید و افزودن آی‌پی اضافه (Add Extra Secondary IP)</div>
-                        <div class="small text-muted">آی‌پی اصلی حفظ شده و یک آی‌پی اختصاصی جدید به لیست addresses کارت شبکه eth0 سرور اضافه می‌گردد.</div>
+                    <div class="col-12 col-md-6">
+                        <label class="p-3 rounded d-flex align-items-center gap-2 w-100" style="background: rgba(167,139,250,0.08); border: 1px solid var(--border-color); cursor: pointer;">
+                            <input type="radio" name="op_type" value="add_extra_ip" style="accent-color: #8B5CF6;">
+                            <div>
+                                <div class="fw-bold small text-gold">خرید آی‌پی اضافه</div>
+                                <div class="small text-muted" style="font-size: 0.75rem;">۳۴۰,۰۰۰ تومان</div>
+                            </div>
+                        </label>
                     </div>
-                </label>
+                </div>
 
-                <button type="submit" class="btn btn-gold py-2 rounded-pill mt-2" onclick="return confirm('هزینه این عملیات ۳۴۰,۰۰۰ تومان است که از کیف پول شما کسر و آی‌پی جدید به صورت خودکار روی سرور ست می‌شود. تایید می‌کنید؟')">
-                    <i class="fas fa-bolt"></i>
-                    <span>پرداخت از کیف پول و اعمال اتوماتیک روی سرور</span>
+                <div>
+                    <label class="form-label">روش پرداخت</label>
+                    <select name="pay_method" class="form-select" onchange="document.getElementById('ipReceiptArea').style.display = (this.value === 'receipt' ? 'block' : 'none');">
+                        <option value="receipt" selected>واریز کارت به کارت و آپلود فیش واریزی</option>
+                        <option value="wallet">کسر از موجودی کیف پول ({{ "{:,}".format(user_wallet|default(0)) }} تومان)</option>
+                    </select>
+                </div>
+
+                <div id="ipReceiptArea">
+                    <div class="mb-2">
+                        <label class="form-label">کد پیگیری واریز</label>
+                        <input type="text" name="tracking_note" class="form-control font-mono" placeholder="کد پیگیری بانکی">
+                    </div>
+                    <div class="cc-upload-zone">
+                        <label class="form-label mb-1">تصویر فیش واریزی (۳۴۰,۰۰۰ تومان)</label>
+                        <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mt-1">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary py-2 rounded-pill mt-2">
+                    <i class="fas fa-check-circle"></i>
+                    <span>ثبت درخواست آی‌پی</span>
                 </button>
             </form>
         </div>

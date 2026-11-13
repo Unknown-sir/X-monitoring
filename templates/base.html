@@ -6,73 +6,83 @@
     <title>{% block title %}کلود کیوب | Cloud Cube{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5.0">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
-<body class="bg-dark">
+<body>
 
 {% if session.get('user_id') %}
 <div class="xm-backdrop" id="sidebarBackdrop"></div>
 
 <div class="xm-layout">
-    <!-- Fixed RTL Sidebar -->
     <aside class="xm-sidebar" id="appSidebar">
         <a href="{{ url_for('dashboard') }}" class="xm-sidebar-header">
             <span class="xm-logo-badge">
-                <i class="fas fa-cubes"></i>
+                <i class="fas fa-cube"></i>
             </span>
             <div>
                 <div class="xm-brand-title">کلود کیوب</div>
-                <span class="xm-brand-sub">Cloud Cube • پنل کاربری</span>
+                <span class="xm-brand-sub">Cloud Cube SaaS</span>
             </div>
         </a>
 
         <nav class="xm-sidebar-nav">
-            <div class="xm-nav-group">پنل کاربری و خدمات من</div>
+            <div class="xm-nav-group">پنل کاربری</div>
             <a href="{{ url_for('dashboard') }}" class="xm-nav-item {% if request.endpoint in ['dashboard', 'live_port', 'user_ip_service_page', 'snapshots_page'] %}active{% endif %}">
-                <i class="fas fa-server text-primary"></i>
-                <span>سرورها و سرویس‌های من</span>
+                <i class="fas fa-layer-group text-primary"></i>
+                <span>سرویس‌ها و نمودار مصرف</span>
             </a>
             <a href="{{ url_for('order_vps_page') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' %}active{% endif %}">
-                <i class="fas fa-cart-plus text-gold"></i>
-                <span>خرید سرور مجازی جدید</span>
+                <i class="fas fa-rocket text-gold"></i>
+                <span>خرید سرور مجازی</span>
             </a>
             <a href="{{ url_for('wallet_page') }}" class="xm-nav-item {% if request.endpoint == 'wallet_page' %}active{% endif %}">
                 <i class="fas fa-wallet text-success"></i>
-                <span>کیف پول و افزایش موجودی</span>
+                <span>شارژ کیف پول (ارسال فیش)</span>
             </a>
             <a href="{{ url_for('tickets_page') }}" class="xm-nav-item {% if request.endpoint == 'tickets_page' %}active{% endif %}">
                 <i class="fas fa-headset text-info"></i>
-                <span>پشتیبانی و تیکت‌ها</span>
+                <span>تیکت پشتیبانی</span>
             </a>
             <a href="{{ url_for('landing') }}" class="xm-nav-item">
                 <i class="fas fa-globe"></i>
-                <span>صفحه اصلی وب‌سایت</span>
+                <span>صفحه اصلی سایت</span>
             </a>
 
             {% if session.get('role') in ['admin', 'owner'] %}
-            <div class="xm-nav-group">مدیریت زیرساخت و فروش (ادمین)</div>
+            <div class="xm-nav-group">مدیریت و مالی (Admin)</div>
             <a href="{{ url_for('admin_dashboard') }}" class="xm-nav-item {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
-                <i class="fas fa-chart-pie"></i>
-                <span>داشبورد مدیریت کل</span>
+                <i class="fas fa-chart-pie text-primary"></i>
+                <span>آمار و چارت‌های مدیریت</span>
+            </a>
+            <a href="{{ url_for('admin_payments_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_payments_page' %}active{% endif %}">
+                <i class="fas fa-receipt text-warning"></i>
+                <span>تایید فیش‌های واریزی</span>
+                {% if pending_payments_count and pending_payments_count > 0 %}
+                <span class="badge bg-danger-subtle ms-auto">{{ pending_payments_count }}</span>
+                {% endif %}
+            </a>
+            <a href="{{ url_for('admin_settings_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_settings_page' %}active{% endif %}">
+                <i class="fas fa-sliders text-info"></i>
+                <span>تنظیمات کارت، بات و پروکسی</span>
             </a>
             <a href="{{ url_for('manage_servers') }}" class="xm-nav-item {% if request.endpoint in ['manage_servers', 'add_server_page', 'change_ip_page'] %}active{% endif %}">
-                <i class="fas fa-network-wired"></i>
-                <span>مدیریت تمام سرورها</span>
+                <i class="fas fa-server"></i>
+                <span>مدیریت سرورها</span>
             </a>
             <a href="{{ url_for('manage_plans_page') }}" class="xm-nav-item {% if request.endpoint == 'manage_plans_page' %}active{% endif %}">
                 <i class="fas fa-tags text-gold"></i>
-                <span>مدیریت پلن‌ها و تعرفه‌ها</span>
+                <span>مدیریت پلن‌ها</span>
             </a>
             <a href="{{ url_for('create_vm_page') }}" class="xm-nav-item {% if request.endpoint == 'create_vm_page' %}active{% endif %}">
                 <i class="fas fa-plus-circle text-primary"></i>
-                <span>ساخت سرور در ESXi</span>
+                <span>ساخت VM در ESXi</span>
             </a>
             <a href="{{ url_for('esxi_hosts_page') }}" class="xm-nav-item {% if request.endpoint == 'esxi_hosts_page' %}active{% endif %}">
-                <i class="fas fa-microchip text-info"></i>
+                <i class="fas fa-microchip"></i>
                 <span>هاست‌های ESXi</span>
             </a>
             <a href="{{ url_for('ip_pool_page') }}" class="xm-nav-item {% if request.endpoint == 'ip_pool_page' %}active{% endif %}">
@@ -81,7 +91,7 @@
             </a>
             <a href="{{ url_for('manage_users') }}" class="xm-nav-item {% if request.endpoint in ['manage_users', 'add_user_page'] %}active{% endif %}">
                 <i class="fas fa-users"></i>
-                <span>مدیریت کاربران و کیف پول</span>
+                <span>کاربران و کیف پول</span>
             </a>
             <a href="{{ url_for('assign_server_page') }}" class="xm-nav-item {% if request.endpoint == 'assign_server_page' %}active{% endif %}">
                 <i class="fas fa-link"></i>
@@ -89,34 +99,23 @@
             </a>
             <a href="{{ url_for('events_page') }}" class="xm-nav-item {% if request.endpoint == 'events_page' %}active{% endif %}">
                 <i class="fas fa-bell"></i>
-                <span>گزارش رویدادها</span>
+                <span>لاگ رویدادها</span>
             </a>
-            <a href="{{ url_for('register_license') }}" class="xm-nav-item {% if request.endpoint == 'register_license' %}active{% endif %}">
-                <i class="fas fa-key"></i>
-                <span>ثبت لایسنس</span>
-            </a>
-            {% if session.get('role') == 'owner' %}
-            <a href="{{ url_for('generate_license') }}" class="xm-nav-item {% if request.endpoint == 'generate_license' %}active{% endif %}">
-                <i class="fas fa-wand-magic-sparkles"></i>
-                <span>تولید لایسنس</span>
-            </a>
-            {% endif %}
             {% endif %}
         </nav>
 
         <div class="xm-sidebar-footer">
             <a href="{{ url_for('profile') }}" class="xm-nav-item {% if request.endpoint == 'profile' %}active{% endif %}">
-                <i class="fas fa-user-cog"></i>
-                <span>تنظیمات حساب و تلگرام</span>
+                <i class="fas fa-user-gear"></i>
+                <span>پروفایل و چت‌آیدی</span>
             </a>
             <a href="{{ url_for('logout') }}" class="xm-nav-item text-danger">
-                <i class="fas fa-sign-out-alt"></i>
-                <span>خروج از حساب</span>
+                <i class="fas fa-power-off"></i>
+                <span>خروج</span>
             </a>
         </div>
     </aside>
 
-    <!-- Main Content Area -->
     <div class="xm-main-wrap">
         <header class="xm-topbar">
             <div class="d-flex align-items-center gap-3">
@@ -124,41 +123,48 @@
                     <i class="fas fa-bars"></i>
                 </button>
                 <div class="d-none d-sm-flex align-items-center gap-2 small">
-                    <span class="badge bg-gold rounded-pill"><i class="fas fa-crown"></i> کلود کیوب</span>
-                    <span class="text-muted">سامانه فروش، تحویل آنی و مانیتورینگ سرور مجازی ESXi</span>
+                    <span class="pulse-dot"></span>
+                    <span class="fw-bold">Cloud Cube</span>
+                    <span class="text-muted">• پلتفرم ابری ESXi</span>
                 </div>
             </div>
 
             <div class="d-flex align-items-center gap-2">
-                <a href="{{ url_for('wallet_page') }}" class="cc-wallet-pill" title="افزایش موجودی کیف پول">
-                    <i class="fas fa-wallet text-gold"></i>
-                    <span>کیف پول: <strong>{{ "{:,}".format(user_wallet|default(0)) }}</strong> تومان</span>
-                    <i class="fas fa-plus-circle text-primary"></i>
+                {% if session.get('role') in ['admin', 'owner'] and pending_payments_count and pending_payments_count > 0 %}
+                <a href="{{ url_for('admin_payments_page') }}" class="btn btn-sm btn-warning rounded-pill">
+                    <i class="fas fa-bell"></i>
+                    <span>{{ pending_payments_count }} فیش منتظر تایید</span>
+                </a>
+                {% endif %}
+
+                <a href="{{ url_for('wallet_page') }}" class="cc-wallet-pill">
+                    <i class="fas fa-wallet text-primary"></i>
+                    <span>{{ "{:,}".format(user_wallet|default(0)) }} تومان</span>
+                    <i class="fas fa-plus-circle text-gold"></i>
                 </a>
 
-                <a href="{{ url_for('order_vps_page') }}" class="btn btn-sm btn-gold rounded-pill d-none d-sm-flex">
-                    <i class="fas fa-bolt"></i>
-                    <span>خرید سرور جدید</span>
+                <a href="{{ url_for('order_vps_page') }}" class="btn btn-sm btn-primary rounded-pill d-none d-sm-flex">
+                    <i class="fas fa-plus"></i>
+                    <span>سفارش سرور</span>
                 </a>
 
-                <button class="theme-toggle-btn" id="themeToggleBtn" type="button" title="تغییر تم روشن / تاریک">
+                <button class="theme-toggle-btn" id="themeToggleBtn" type="button" title="تغییر تم">
                     <i class="fas fa-sun" id="themeToggleIcon"></i>
                 </button>
 
                 <div class="dropdown">
-                    <button class="btn btn-sm btn-outline-secondary rounded-pill d-flex align-items-center gap-2 px-3 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="fas fa-user-circle text-primary"></i>
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill d-flex align-items-center gap-2 px-3 py-1" type="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-user-astronaut text-primary"></i>
                         <span class="small fw-bold">{{ session.get('username', 'User') }}</span>
-                        <span class="badge {% if session.get('role') == 'owner' %}bg-purple{% elif session.get('role') == 'admin' %}bg-gold{% else %}bg-primary-subtle{% endif %} rounded-pill" style="font-size: 0.65rem;">
-                            {% if session.get('role') == 'owner' %}مالک{% elif session.get('role') == 'admin' %}مدیر{% else %}مشتری{% endif %}
-                        </span>
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow">
-                        <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-server me-2"></i>سرورهای من</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('wallet_page') }}"><i class="fas fa-wallet me-2"></i>کیف پول ({{ "{:,}".format(user_wallet|default(0)) }} تومان)</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-id-badge me-2"></i>تنظیمات پروفایل</a></li>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{{ url_for('dashboard') }}"><i class="fas fa-layer-group me-2"></i>پنل کاربری</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('wallet_page') }}"><i class="fas fa-wallet me-2"></i>کیف پول</a></li>
+                        {% if session.get('role') in ['admin', 'owner'] %}
+                        <li><a class="dropdown-item" href="{{ url_for('admin_settings_page') }}"><i class="fas fa-sliders me-2"></i>تنظیمات بات و کارت</a></li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt me-2"></i>خروج</a></li>
+                        <li><a class="dropdown-item text-danger" href="{{ url_for('logout') }}"><i class="fas fa-power-off me-2"></i>خروج</a></li>
                     </ul>
                 </div>
             </div>
@@ -169,7 +175,7 @@
         </main>
 
         <footer class="xm-footer">
-            کلود کیوب (Cloud Cube) • سامانه هوشمند فروش، اتوماسیون ESXi و پنل کاربری سرور مجازی • پشتیبانی تلگرام: <span class="font-mono text-gold">@CloudCubeVPS</span>
+            Cloud Cube SaaS Platform • <span class="font-mono text-gold">@CloudCubeVPS</span>
         </footer>
     </div>
 </div>
@@ -178,6 +184,6 @@
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/script.js') }}?v=4.0"></script>
+<script src="{{ url_for('static', filename='js/script.js') }}?v=5.0"></script>
 </body>
 </html>

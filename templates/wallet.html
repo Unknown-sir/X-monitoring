@@ -1,97 +1,122 @@
 {% extends "base.html" %}
-{% block title %}کیف پول و افزایش موجودی | کلود کیوب{% endblock %}
+{% block title %}شارژ کیف پول و ارسال فیش | کلود کیوب{% endblock %}
 {% block content %}
-<div class="row g-4">
-    <div class="col-12 col-xl-7">
+<div class="row g-4 anim-fade-up">
+    <!-- Left Column: Bank Card Info + Receipt Upload Form -->
+    <div class="col-12 col-xl-6">
         <div class="card p-4 h-100">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h2 class="fw-extrabold mb-1" style="font-size: 1.35rem;"><i class="fas fa-wallet text-gold me-1"></i> کیف پول الکترونیکی کلود کیوب</h2>
-                    <p class="text-muted small mb-0">افزایش اعتبار آنی جهت خرید سرور مجازی، شارژ ترافیک و خدمات آی‌پی</p>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="fw-extrabold m-0" style="font-size: 1.25rem;"><i class="fas fa-wallet text-primary me-1"></i> شارژ کیف پول (کارت به کارت)</h2>
+                <span class="badge bg-purple font-mono" style="font-size: 0.9rem;">موجودی: {{ "{:,}".format(wallet_balance|default(0)) }} ت</span>
+            </div>
+
+            <!-- Stylized Admin Bank Card -->
+            <div class="cc-bank-card mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small text-gold fw-bold"><i class="fas fa-building-columns me-1"></i> {{ sys_cfg.bank_name }}</span>
+                    <span class="badge bg-primary-subtle">درگاه کارت به کارت کلود کیوب</span>
                 </div>
-                <div class="text-end p-3 rounded" style="background: rgba(0, 96, 57, 0.25); border: 1px solid var(--gold);">
-                    <div class="small text-muted">موجودی فعلی شما</div>
-                    <div class="fw-extrabold text-gold" style="font-size: 1.5rem;">{{ "{:,}".format(wallet_balance|default(0)) }} تومان</div>
+                <div class="d-flex justify-content-between align-items-center my-3">
+                    <div class="font-mono fw-extrabold" style="font-size: 1.45rem; letter-spacing: 2px;">{{ sys_cfg.bank_card_number }}</div>
+                    <button type="button" class="btn btn-sm btn-outline-primary rounded-pill" onclick="copyText('{{ sys_cfg.bank_card_number }}')">
+                        <i class="fas fa-copy"></i> کپی
+                    </button>
+                </div>
+                <div class="d-flex justify-content-between align-items-center small text-muted">
+                    <span>صاحب حساب: <strong style="color: #fff;">{{ sys_cfg.bank_card_holder }}</strong></span>
+                    <span class="font-mono">{{ sys_cfg.bank_sheba }}</span>
                 </div>
             </div>
 
             {% if message %}
-            <div class="alert alert-success d-flex align-items-center gap-2">
-                <i class="fas fa-circle-check"></i>
-                <span>{{ message }}</span>
-            </div>
+            <div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ message }}</div>
+            {% endif %}
+            {% if error_msg %}
+            <div class="alert alert-danger"><i class="fas fa-triangle-exclamation me-1"></i> {{ error_msg }}</div>
             {% endif %}
 
-            <form method="POST" action="{{ url_for('wallet_page') }}">
-                <label class="form-label">انتخاب سریع مبلغ شارژ (منطبق با تعرفه سرویس‌های کلود کیوب):</label>
-                <div class="d-flex flex-wrap gap-2 mb-3">
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='340000'">۳۴۰,۰۰۰ تومان (تغییر/خرید IP)</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='750000'">۷۵۰,۰۰۰ تومان (۱ ترابایت ترافیک)</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='1190000'">۱,۱۹۰,۰۰۰ تومان (سرویس برنزی)</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='1450000'">۱,۴۵۰,۰۰۰ تومان (سرویس نقره‌ای)</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='2450000'">۲,۴۵۰,۰۰۰ تومان (سرویس طلایی)</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('walletAmount').value='3390000'">۳,۳۹۰,۰۰۰ تومان (سرویس پلاتینیوم)</button>
+            <form method="POST" action="{{ url_for('wallet_page') }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label">انتخاب سریع مبلغ واریزی (تومان)</label>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='340000'">340,000</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='750000'">750,000</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='1190000'">1,190,000</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='1450000'">1,450,000</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='2450000'">2,450,000</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary font-mono" onclick="document.getElementById('wAmt').value='3390000'">3,390,000</button>
+                    </div>
+                    <input type="number" id="wAmt" name="amount" class="form-control font-mono" value="1190000" min="50000" step="10000" required>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">مبلغ دلخواه جهت افزایش موجودی (به تومان)</label>
-                    <input type="number" id="walletAmount" name="amount" class="form-control font-mono" value="1190000" min="50000" step="10000" required>
+                <div>
+                    <label class="form-label">کد پیگیری / ۴ رقم آخر کارت شما</label>
+                    <input type="text" name="tracking_note" class="form-control font-mono" placeholder="مثلاً پیگیری 482910" required>
                 </div>
 
-                <button type="submit" class="btn btn-gold w-100 py-2 rounded-pill">
-                    <i class="fas fa-credit-card"></i>
-                    <span>پرداخت آنلاین و شارژ آنی کیف پول</span>
+                <div class="cc-upload-zone">
+                    <i class="fas fa-cloud-arrow-up text-primary mb-2" style="font-size: 1.6rem;"></i>
+                    <label class="form-label mb-1">بارگذاری تصویر فیش واریزی (الزامی)</label>
+                    <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mt-2" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 rounded-pill">
+                    <i class="fas fa-paper-plane"></i>
+                    <span>ثبت فیش و ارسال برای تایید مدیریت</span>
                 </button>
             </form>
         </div>
     </div>
 
-    <div class="col-12 col-xl-5">
+    <!-- Right Column: Receipt History Table -->
+    <div class="col-12 col-xl-6">
         <div class="card p-4 h-100">
-            <h3 class="fw-bold mb-3" style="font-size: 1.15rem;"><i class="fas fa-list-check text-primary me-1"></i> جدول تعرفه‌های رسمی کلود کیوب</h3>
+            <h3 class="fw-bold mb-3" style="font-size: 1.15rem;"><i class="fas fa-clock-rotate-left text-gold me-1"></i> سوابق فیش‌ها و تراکنش‌های من</h3>
+            {% if history %}
             <div class="table-responsive">
                 <table class="table small">
                     <thead>
                         <tr>
-                            <th>عنوان سرویس / خدمت</th>
-                            <th>مشخصات</th>
-                            <th>تعرفه (تومان)</th>
+                            <th>#</th>
+                            <th>عنوان</th>
+                            <th>مبلغ (تومان)</th>
+                            <th>وضعیت</th>
+                            <th>نتیجه / علت رد</th>
                         </tr>
                     </thead>
                     <tbody>
+                        {% for h in history %}
                         <tr>
-                            <td><strong>سرویس برنزی</strong></td>
-                            <td>1 Core / 2GB / 20GB SSD / 1000GiB</td>
-                            <td class="font-mono text-gold">1,190,000</td>
+                            <td class="font-mono">#{{ h.id }}</td>
+                            <td>
+                                <strong>{{ h.title }}</strong>
+                                <div class="text-muted font-mono" style="font-size: 0.72rem;">{{ h.created_at }}</div>
+                            </td>
+                            <td class="font-mono text-gold">{{ "{:,}".format(h.amount_toman) }}</td>
+                            <td>
+                                {% if h.status == 'approved' %}
+                                    <span class="badge bg-success-subtle">تایید شده</span>
+                                {% elif h.status == 'rejected' %}
+                                    <span class="badge bg-danger-subtle">رد شده</span>
+                                {% else %}
+                                    <span class="badge bg-warning-subtle">در انتظار تایید</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if h.status == 'rejected' %}
+                                    <span class="text-danger">{{ h.reject_reason }}</span>
+                                {% else %}
+                                    <span class="text-muted">{{ h.fulfillment_note or 'در حال بررسی توسط ادمین' }}</span>
+                                {% endif %}
+                            </td>
                         </tr>
-                        <tr>
-                            <td><strong>سرویس نقره‌ای</strong></td>
-                            <td>2 Core / 2GB / 20GB SSD / 1500GiB</td>
-                            <td class="font-mono text-gold">1,450,000</td>
-                        </tr>
-                        <tr>
-                            <td><strong>سرویس طلایی</strong></td>
-                            <td>4 Core / 4GB / 20GB SSD / 2000GiB</td>
-                            <td class="font-mono text-gold">2,450,000</td>
-                        </tr>
-                        <tr>
-                            <td><strong>سرویس پلاتینیوم</strong></td>
-                            <td>6 Core / 6GB / 20GB SSD / 3000GiB</td>
-                            <td class="font-mono text-gold">3,390,000</td>
-                        </tr>
-                        <tr>
-                            <td><strong>ترافیک اضافه</strong></td>
-                            <td>هر ۱ ترابایت (۱۰۰۰ گیگابایت)</td>
-                            <td class="font-mono text-primary">750,000</td>
-                        </tr>
-                        <tr>
-                            <td><strong>تغییر یا افزودن IP</strong></td>
-                            <td>تخصیص خودکار از بانک آی‌پی</td>
-                            <td class="font-mono text-primary">340,000</td>
-                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
+            {% else %}
+            <div class="text-center text-muted p-5">هنوز فیش واریزی ثبت نکرده‌اید.</div>
+            {% endif %}
         </div>
     </div>
 </div>

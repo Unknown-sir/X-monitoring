@@ -7,6 +7,8 @@ import os
 import platform
 import random
 import re
+import secrets
+import requests
 import smtplib
 import sqlite3
 import subprocess
@@ -29,6 +31,10 @@ import esxi_manager
 load_dotenv()
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+RECEIPT_UPLOAD_DIR = os.path.join("static", "uploads", "receipts")
+os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
+DEFAULT_TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "socks5://CBZBWfWxTa:YZSIy26WQC@sub.rskhi.ir:12012")
 
 # تنظیمات لاگ
 logging.basicConfig(
@@ -268,6 +274,45 @@ def init_db():
             created_at TEXT
         )"""
     )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TEXT
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS payment_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            request_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            amount_toman INTEGER NOT NULL DEFAULT 0,
+            receipt_filename TEXT NOT NULL,
+            tracking_note TEXT DEFAULT NULL,
+            payload_json TEXT DEFAULT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            reject_reason TEXT DEFAULT NULL,
+            decided_by TEXT DEFAULT NULL,
+            decided_at TEXT DEFAULT NULL,
+            telegram_msg_id INTEGER DEFAULT NULL,
+            fulfillment_note TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL
+        )"""
+    )
+    now_init = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    default_settings = [
+        ("telegram_proxy", DEFAULT_TELEGRAM_PROXY, now_init),
+        ("telegram_bot_token", TELEGRAM_TOKEN if TELEGRAM_TOKEN != "YOUR_BOT_TOKEN" else "", now_init),
+        ("admin_chat_id", ADMIN_CHAT_ID if ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "", now_init),
+        ("bank_card_number", "6037-9975-0000-0000", now_init),
+        ("bank_card_holder", "مدیریت کلود کیوب", now_init),
+        ("bank_sheba", "IR000000000000000000000000", now_init),
+        ("bank_name", "بانک ملی / ملت", now_init),
+    ]
+    for sk, sv, st in default_settings:
+        c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
 
     c.execute("PRAGMA table_info(servers)")
     cols = [info[1] for info in c.fetchall()]
@@ -484,21 +529,557 @@ def startup_check():
     return True
 
 
+# ==============================================================================
+# Dynamic System Settings, Proxy-Aware Telegram Client & Payment Receipt Engine
+# ==============================================================================
+def get_system_settings() -> dict:
+    defaults = {
+        "telegram_proxy": DEFAULT_TELEGRAM_PROXY,
+        "telegram_bot_token": TELEGRAM_TOKEN if TELEGRAM_TOKEN != "YOUR_BOT_TOKEN" else "",
+        "admin_chat_id": ADMIN_CHAT_ID if ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "",
+        "bank_card_number": "6037-9975-0000-0000",
+        "bank_card_holder": "مدیریت کلود کیوب",
+        "bank_sheba": "IR000000000000000000000000",
+        "bank_name": "بانک ملی / ملت",
+    }
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT key, value FROM system_settings")
+        for k, v in c.fetchall():
+            if v is not None:
+                defaults[k] = v
+        conn.close()
+    except Exception:
+        pass
+    return defaults
+
+
+def set_system_setting(key: str, value: str):
+    now_s = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+        (key, value.strip(), now_s),
+    )
+    conn.commit()
+    conn.close()
+
+
+def normalize_proxy_for_requests(proxy_url: str | None) -> dict | None:
+    if not proxy_url or not proxy_url.strip():
+        return None
+    p = proxy_url.strip()
+    # Use socks5h:// so DNS resolution for api.telegram.org also routes over the SOCKS5 proxy in Iran
+    if p.startswith("socks5://"):
+        p_req = "socks5h://" + p[len("socks5://") :]
+    else:
+        p_req = p
+    return {"http": p_req, "https": p_req}
+
+
+def tg_api_request(method: str, data: dict | None = None, files: dict | None = None, timeout: int = 18) -> dict:
+    cfg = get_system_settings()
+    token = (cfg.get("telegram_bot_token") or "").strip()
+    if not token or token == "YOUR_BOT_TOKEN":
+        return {"ok": False, "description": "Telegram bot token not configured"}
+    proxies = normalize_proxy_for_requests(cfg.get("telegram_proxy"))
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    try:
+        resp = requests.post(url, data=data or {}, files=files, proxies=proxies, timeout=timeout)
+        return resp.json()
+    except Exception as e:
+        logging.error(f"Telegram API error ({method}): {e}")
+        return {"ok": False, "description": str(e)}
+
+
+def save_validated_receipt(file_storage, user_id: int) -> tuple[bool, str]:
+    """Validate receipt image extension and magic bytes, then save safely."""
+    if not file_storage or not file_storage.filename:
+        return False, "لطفاً تصویر فیش واریزی را انتخاب و بارگذاری کنید."
+    orig_name = file_storage.filename.lower()
+    ext = os.path.splitext(orig_name)[1]
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return False, "فرمت فایل فیش باید یکی از فرمت‌های تصویری JPG، PNG یا WEBP باشد."
+    header = file_storage.stream.read(16)
+    file_storage.stream.seek(0)
+    is_jpeg = header.startswith(b"\xff\xd8\xff")
+    is_png = header.startswith(b"\x89PNG\r\n\x1a\n")
+    is_webp = header.startswith(b"RIFF") and b"WEBP" in header[:16]
+    if not (is_jpeg or is_png or is_webp):
+        return False, "فایل بارگذاری‌شده یک تصویر معتبر نیست."
+
+    os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
+    safe_name = f"receipt_u{user_id}_{int(time.time())}_{secrets.token_hex(4)}{ext}"
+    full_path = os.path.join(RECEIPT_UPLOAD_DIR, safe_name)
+    file_storage.save(full_path)
+    return True, safe_name
+
+
+def format_payment_caption(req_id: int, username: str, title: str, amount_toman: int, tracking_note: str, status_line: str = "⏳ در انتظار بررسی و تایید مدیر") -> str:
+    return (
+        f"💳 *درخواست تراکنش و فیش واریزی #{req_id}*\n\n"
+        f"👤 *کاربر:* `{username}`\n"
+        f"📌 *نوع سفارش:* {title}\n"
+        f"💰 *مبلغ:* `{amount_toman:,} تومان`\n"
+        f"🧾 *کد پیگیری / توضیحات:* `{tracking_note or 'ثبت نشده'}`\n\n"
+        f"📍 *وضعیت:* {status_line}"
+    )
+
+
+def notify_admin_new_receipt(req_id: int, username: str, title: str, amount_toman: int, tracking_note: str, receipt_filename: str):
+    cfg = get_system_settings()
+    admin_chat = (cfg.get("admin_chat_id") or "").strip()
+    if not admin_chat:
+        return
+    caption = format_payment_caption(req_id, username, title, amount_toman, tracking_note)
+    kb = {
+        "inline_keyboard": [
+            [
+                {"text": f"✅ تایید و انجام خودکار (#{req_id})", "callback_data": f"pay_approve:{req_id}"},
+                {"text": f"❌ رد درخواست با ذکر علت (#{req_id})", "callback_data": f"pay_reject:{req_id}"},
+            ]
+        ]
+    }
+    photo_path = os.path.join(RECEIPT_UPLOAD_DIR, receipt_filename)
+    msg_id = None
+    if os.path.exists(photo_path):
+        try:
+            with open(photo_path, "rb") as pf:
+                res = tg_api_request(
+                    "sendPhoto",
+                    data={
+                        "chat_id": admin_chat,
+                        "caption": caption,
+                        "parse_mode": "Markdown",
+                        "reply_markup": json.dumps(kb),
+                    },
+                    files={"photo": pf},
+                )
+            if res.get("ok") and res.get("result"):
+                msg_id = res["result"].get("message_id")
+        except Exception as e:
+            logging.error(f"Error sending receipt photo to Telegram: {e}")
+
+    if not msg_id:
+        res = tg_api_request(
+            "sendMessage",
+            data={
+                "chat_id": admin_chat,
+                "text": caption,
+                "parse_mode": "Markdown",
+                "reply_markup": json.dumps(kb),
+            },
+        )
+        if res.get("ok") and res.get("result"):
+            msg_id = res["result"].get("message_id")
+
+    if msg_id:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("UPDATE payment_requests SET telegram_msg_id=? WHERE id=?", (msg_id, req_id))
+        conn.commit()
+        conn.close()
+
+
+def _update_admin_telegram_receipt_status(req_row: dict, final_status_line: str):
+    cfg = get_system_settings()
+    admin_chat = (cfg.get("admin_chat_id") or "").strip()
+    msg_id = req_row.get("telegram_msg_id")
+    if not admin_chat or not msg_id:
+        return
+    new_caption = format_payment_caption(
+        req_row["id"],
+        req_row["username"],
+        req_row["title"],
+        req_row["amount_toman"],
+        req_row["tracking_note"],
+        status_line=final_status_line,
+    )
+    empty_kb = json.dumps({"inline_keyboard": []})
+    res = tg_api_request(
+        "editMessageCaption",
+        data={
+            "chat_id": admin_chat,
+            "message_id": msg_id,
+            "caption": new_caption,
+            "parse_mode": "Markdown",
+            "reply_markup": empty_kb,
+        },
+    )
+    if not res.get("ok"):
+        tg_api_request(
+            "editMessageText",
+            data={
+                "chat_id": admin_chat,
+                "message_id": msg_id,
+                "text": new_caption,
+                "parse_mode": "Markdown",
+                "reply_markup": empty_kb,
+            },
+        )
+
+
+def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str) -> str:
+    c.execute(
+        "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman FROM vps_plans WHERE id=?",
+        (plan_id,),
+    )
+    plan_row = c.fetchone()
+    if not plan_row:
+        return "پلن مورد نظر یافت نشد."
+    _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, _ = plan_row
+    ram_mb = int(ram_gb) * 1024
+    clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label or "") or f"cc-{p_code}-{int(time.time()) % 10000}"
+
+    c.execute(
+        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+    )
+    pool_row = c.fetchone()
+    if pool_row:
+        pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = pool_row
+    else:
+        pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = (
+            None,
+            "در انتظار تخصیص IP",
+            "25",
+            "185.42.212.129",
+            "",
+            "",
+            "",
+        )
+
+    c.execute(
+        "SELECT id, ip, port, username, password, default_datastore, default_network, template_vmdk FROM esxi_hosts ORDER BY id ASC LIMIT 1"
+    )
+    esxi_row = c.fetchone()
+    esxi_host_id = esxi_row[0] if esxi_row else None
+    vmid = None
+
+    if esxi_row and pool_row:
+        netplan_yaml = esxi_manager.generate_netplan_yaml(
+            primary_ipv4=primary_ip,
+            gateway_ipv4=gateway,
+            netmask_or_prefix=netmask or "25",
+            ipv6=ipv6,
+            ipv6_gateway=ipv6_gw,
+        )
+        meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
+            vm_name=clean_name,
+            ssh_user="root",
+            ssh_password=root_password,
+            netplan_yaml=netplan_yaml,
+        )
+        seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
+        ok, created_vmid, _ = esxi_manager.create_vm_on_esxi(
+            esxi_host=esxi_row[1],
+            esxi_port=esxi_row[2],
+            esxi_user=esxi_row[3],
+            esxi_password=esxi_row[4],
+            vm_name=clean_name,
+            cpus=cpus,
+            ram_mb=ram_mb,
+            disk_gb=disk_gb,
+            datastore=esxi_row[5],
+            template_vmdk=esxi_row[7],
+            network_name=esxi_row[6],
+            mac_address=mac_addr,
+            seed_iso_bytes=seed_iso,
+        )
+        if ok:
+            vmid = created_vmid
+
+    now_iso = datetime.datetime.utcnow().isoformat()
+    c.execute(
+        """INSERT INTO servers (
+            name, ip, username, password, traffic_limit, active, traffic_usage,
+            updated_at, esxi_host_id, vmid, vm_name, is_suspended,
+            netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb
+        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            clean_name,
+            primary_ip,
+            root_password,
+            traffic_gib,
+            now_iso,
+            esxi_host_id,
+            vmid,
+            clean_name,
+            netmask,
+            gateway,
+            ipv6,
+            ipv6_gw,
+            mac_addr,
+            p_name_fa,
+            cpus,
+            ram_mb,
+            disk_gb,
+        ),
+    )
+    srv_id = c.lastrowid
+    if pool_id:
+        c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (srv_id, pool_id))
+    c.execute("INSERT OR IGNORE INTO user_servers (user_id, server_id) VALUES (?, ?)", (user_id, srv_id))
+    c.execute(
+        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+        (srv_id, f"سفارش {p_name_fa} ({clean_name}) برای کاربر {username} تایید و ساخته شد.", now_iso),
+    )
+    invalidate_servers_cache()
+    return f"سرور {clean_name} با آی‌پی {primary_ip} ساخته و فعال شد."
+
+
+def _execute_traffic_recharge(c, server_id: int, add_amount: float) -> str:
+    c.execute(
+        """SELECT s.traffic_limit, s.traffic_usage, s.is_suspended, s.vmid, s.name, h.ip, h.port, h.username, h.password
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        return "سرور مورد نظر یافت نشد."
+    curr_limit, _, is_suspended, vmid, srv_name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+    new_limit = (curr_limit or 0.0) + float(add_amount)
+    c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
+    if is_suspended and vmid and esxi_ip:
+        esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True)
+        c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
+    now_iso = datetime.datetime.utcnow().isoformat()
+    c.execute(
+        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+        (server_id, f"ترافیک سرور {srv_name} به میزان {add_amount} GiB پس از تایید واریزی شارژ شد.", now_iso),
+    )
+    invalidate_servers_cache()
+    return f"ترافیک سرور {srv_name} به میزان {add_amount:g} GiB افزایش یافت و پورت شبکه فعال شد."
+
+
+def _execute_ip_service(c, server_id: int, op_type: str) -> str:
+    c.execute(
+        "SELECT id, name, ip, netmask, gateway, ipv6, ipv6_gateway, extra_ips, username, password FROM servers WHERE id=?",
+        (server_id,),
+    )
+    s_row = c.fetchone()
+    if not s_row:
+        return "سرور مورد نظر یافت نشد."
+    srv_id, srv_name, old_ip, old_mask, old_gw, old_v6, old_v6gw, old_extras, ssh_u, ssh_p = s_row
+    c.execute(
+        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+    )
+    free_ip = c.fetchone()
+    if not free_ip:
+        return "هیچ آی‌پی آزادی در بانک آی‌پی موجود نیست."
+    pool_id, new_ip, new_mask, new_gw, new_v6, new_v6gw = free_ip
+    old_extras = old_extras or ""
+    if op_type == "change_ip":
+        c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE ip_address=? AND server_id=?", (old_ip, server_id))
+        c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
+        c.execute(
+            "UPDATE servers SET ip=?, netmask=?, gateway=?, ipv6=?, ipv6_gateway=? WHERE id=?",
+            (new_ip, new_mask, new_gw, new_v6 or old_v6, new_v6gw or old_v6gw, server_id),
+        )
+        extra_list = [x.strip() for x in re.split(r"[,\n]", old_extras) if x.strip()]
+        netplan_yaml = esxi_manager.generate_netplan_yaml(
+            primary_ipv4=new_ip,
+            gateway_ipv4=new_gw,
+            netmask_or_prefix=new_mask,
+            extra_ips=extra_list,
+            ipv6=new_v6 or old_v6,
+            ipv6_gateway=new_v6gw or old_v6gw,
+        )
+        esxi_manager.apply_netplan_to_vm(old_ip, ssh_u, ssh_p, netplan_yaml)
+        invalidate_servers_cache()
+        return f"آی‌پی اصلی سرور {srv_name} به {new_ip} تغییر یافت و در Netplan اعمال شد."
+    else:
+        c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
+        current_extras = [x.strip() for x in re.split(r"[,\n]", old_extras) if x.strip()]
+        current_extras.append(f"{new_ip}/{new_mask}")
+        updated_extras = ", ".join(current_extras)
+        c.execute("UPDATE servers SET extra_ips=? WHERE id=?", (updated_extras, server_id))
+        netplan_yaml = esxi_manager.generate_netplan_yaml(
+            primary_ipv4=old_ip,
+            gateway_ipv4=old_gw or "185.42.212.129",
+            netmask_or_prefix=old_mask or "25",
+            extra_ips=current_extras,
+            ipv6=old_v6,
+            ipv6_gateway=old_v6gw,
+        )
+        esxi_manager.apply_netplan_to_vm(old_ip, ssh_u, ssh_p, netplan_yaml)
+        invalidate_servers_cache()
+        return f"آی‌پی اضافه {new_ip} به سرور {srv_name} متصل و در Netplan فعال شد."
+
+
+def decide_payment_request(req_id: int, action: str, actor_label: str, reject_reason: str | None = None) -> tuple[bool, str]:
+    """
+    Atomic Single-Use Approval/Rejection Lock shared by Web Panel and Telegram Bot.
+    1. Immediately locks and closes the request (`WHERE id=? AND status='pending'`).
+    2. Prevents any second decision in either Bot or Panel.
+    3. Requires a non-empty reject_reason on rejection.
+    4. Runs the fulfillment action automatically on approval.
+    """
+    if action not in ("approve", "reject"):
+        return False, "عملیات نامعتبر است."
+    clean_reason = (reject_reason or "").strip()
+    if action == "reject" and not clean_reason:
+        return False, "وارد کردن علت رد شدن درخواست الزامی است."
+
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    new_status = "approved" if action == "approve" else "rejected"
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    # Step 1: Atomic single-use lock!
+    c.execute(
+        """UPDATE payment_requests
+           SET status=?, decided_by=?, decided_at=?, reject_reason=?
+           WHERE id=? AND status='pending'""",
+        (new_status, actor_label, now_str, clean_reason if action == "reject" else None, req_id),
+    )
+    if c.rowcount == 0:
+        conn.close()
+        return False, "این درخواست قبلاً تعیین تکلیف و بسته شده است و امکان تغییر مجدد آن وجود ندارد."
+    conn.commit()
+
+    # Step 2: Fetch request details to fulfill or notify
+    c.execute(
+        """SELECT p.id, p.user_id, p.username, p.request_type, p.title, p.amount_toman,
+                  p.tracking_note, p.payload_json, p.telegram_msg_id, u.telegram_chat_id
+           FROM payment_requests p
+           LEFT JOIN users u ON p.user_id = u.id
+           WHERE p.id=?""",
+        (req_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return False, "درخواست یافت نشد."
+
+    req_info = {
+        "id": row[0],
+        "user_id": row[1],
+        "username": row[2],
+        "request_type": row[3],
+        "title": row[4],
+        "amount_toman": row[5],
+        "tracking_note": row[6],
+        "payload_json": row[7],
+        "telegram_msg_id": row[8],
+        "user_chat_id": row[9],
+    }
+
+    if action == "approve":
+        rtype = req_info["request_type"]
+        payload = {}
+        try:
+            payload = json.loads(req_info["payload_json"] or "{}")
+        except Exception:
+            payload = {}
+
+        if rtype == "wallet_charge":
+            c.execute(
+                "UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + ? WHERE id=?",
+                (req_info["amount_toman"], req_info["user_id"]),
+            )
+            fulfillment_note = f"کیف پول کاربر {req_info['username']} به مبلغ {req_info['amount_toman']:,} تومان شارژ شد."
+        elif rtype == "buy_vps":
+            fulfillment_note = _execute_vps_provisioning(
+                c,
+                req_info["user_id"],
+                req_info["username"],
+                int(payload.get("plan_id", 1)),
+                payload.get("vm_name", ""),
+                payload.get("root_password", "Ubuntu@12345"),
+            )
+        elif rtype == "recharge_traffic":
+            fulfillment_note = _execute_traffic_recharge(
+                c,
+                int(payload.get("server_id", 0)),
+                float(payload.get("add_amount", 100)),
+            )
+        elif rtype in ("change_ip", "add_extra_ip"):
+            fulfillment_note = _execute_ip_service(
+                c,
+                int(payload.get("server_id", 0)),
+                rtype,
+            )
+        else:
+            fulfillment_note = "تایید شد."
+
+        c.execute("UPDATE payment_requests SET fulfillment_note=? WHERE id=?", (fulfillment_note, req_id))
+        conn.commit()
+        conn.close()
+
+        status_line = f"✅ تایید و بسته شد توسط {actor_label}\n⚙️ نتیجه: {fulfillment_note}"
+        _update_admin_telegram_receipt_status(req_info, status_line)
+
+        if req_info["user_chat_id"]:
+            tg_api_request(
+                "sendMessage",
+                data={
+                    "chat_id": req_info["user_chat_id"],
+                    "text": (
+                        f"✅ *درخواست شماره #{req_id} شما تایید شد!*\n\n"
+                        f"📌 *سفارش:* {req_info['title']}\n"
+                        f"💰 *مبلغ:* `{req_info['amount_toman']:,} تومان`\n"
+                        f"⚙️ *نتیجه عملیات:* {fulfillment_note}"
+                    ),
+                    "parse_mode": "Markdown",
+                },
+            )
+        return True, f"درخواست #{req_id} بسته شد و عملیات انجام گردید: {fulfillment_note}"
+
+    else:
+        fulfillment_note = f"رد شده توسط {actor_label} — علت: {clean_reason}"
+        c.execute("UPDATE payment_requests SET fulfillment_note=? WHERE id=?", (fulfillment_note, req_id))
+        conn.commit()
+        conn.close()
+
+        status_line = f"❌ رد و بسته شد توسط {actor_label}\n📝 علت رد: {clean_reason}"
+        _update_admin_telegram_receipt_status(req_info, status_line)
+
+        if req_info["user_chat_id"]:
+            tg_api_request(
+                "sendMessage",
+                data={
+                    "chat_id": req_info["user_chat_id"],
+                    "text": (
+                        f"❌ *درخواست شماره #{req_id} شما رد شد.*\n\n"
+                        f"📌 *سفارش:* {req_info['title']}\n"
+                        f"💰 *مبلغ:* `{req_info['amount_toman']:,} تومان`\n"
+                        f"📝 *علت رد شدن:* {clean_reason}"
+                    ),
+                    "parse_mode": "Markdown",
+                },
+            )
+        return True, f"درخواست #{req_id} با ذکر علت رد و بسته شد."
+
+
 @app.context_processor
 def inject_user_wallet():
     balance = 0
+    pending_payments_count = 0
+    sys_cfg = get_system_settings()
     if "user_id" in session:
         try:
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
             row = c.fetchone()
-            conn.close()
             if row and row[0] is not None:
                 balance = int(row[0])
+            if session.get("role") in ["admin", "owner"]:
+                c.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'")
+                pending_payments_count = c.fetchone()[0] or 0
+            conn.close()
         except Exception:
-            balance = 0
-    return {"user_wallet": balance, "brand_name": "کلود کیوب", "brand_en": "Cloud Cube"}
+            pass
+    return {
+        "user_wallet": balance,
+        "pending_payments_count": pending_payments_count,
+        "sys_cfg": sys_cfg,
+        "brand_name": "کلود کیوب",
+        "brand_en": "Cloud Cube",
+    }
 
 
 def get_active_plans():
@@ -533,7 +1114,7 @@ def landing():
     if request.method == "POST":
         return login()
     plans = get_active_plans()
-    return render_template("landing.html", plans=plans)
+    return render_template("landing.html", plans=plans, logged_in=("user_id" in session), username=session.get("username", ""))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -649,6 +1230,24 @@ def dashboard():
             (session["user_id"],),
         )
     servers = c.fetchall()
+
+    c.execute(
+        "SELECT id, title, amount_toman, status, reject_reason, fulfillment_note, created_at "
+        "FROM payment_requests WHERE user_id=? ORDER BY id DESC LIMIT 8",
+        (session["user_id"],),
+    )
+    my_requests = [
+        {
+            "id": r[0],
+            "title": r[1],
+            "amount_toman": r[2],
+            "status": r[3],
+            "reject_reason": r[4],
+            "fulfillment_note": r[5],
+            "created_at": r[6],
+        }
+        for r in c.fetchall()
+    ]
     conn.close()
     plans = get_active_plans()
 
@@ -656,6 +1255,7 @@ def dashboard():
         "dashboard.html",
         servers=servers,
         plans=plans,
+        my_requests=my_requests,
         role=session["role"],
         time_left=time_left,
         is_trial=is_trial,
@@ -668,25 +1268,64 @@ def wallet_page():
     conn = get_db_connection()
     c = conn.cursor()
     msg = None
+    error_msg = None
+
     if request.method == "POST":
         try:
             amount = int(request.form.get("amount", 0) or 0)
         except ValueError:
             amount = 0
-        if amount > 0:
-            c.execute("UPDATE users SET wallet_balance = COALESCE(wallet_balance, 0) + ? WHERE id=?", (amount, session["user_id"]))
-            now_iso = datetime.datetime.utcnow().isoformat()
-            c.execute(
-                "INSERT INTO events (server_id, level, message, created_at) VALUES (NULL, 'info', ?, ?)",
-                (f"افزایش موجودی کیف پول کاربر {session.get('username')} به مبلغ {amount:,} تومان.", now_iso),
-            )
-            conn.commit()
-            msg = f"کیف پول شما به مبلغ {amount:,} تومان با موفقیت شارژ شد."
+        tracking_note = request.form.get("tracking_note", "").strip()
+        receipt_file = request.files.get("receipt_file")
+
+        if amount < 50000:
+            error_msg = "حداقل مبلغ شارژ کیف پول ۵۰,۰۰۰ تومان است."
+        else:
+            ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+            if not ok_file:
+                error_msg = file_or_err
+            else:
+                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                title = f"شارژ کیف پول ({amount:,} تومان)"
+                c.execute(
+                    """INSERT INTO payment_requests (
+                        user_id, username, request_type, title, amount_toman, receipt_filename,
+                        tracking_note, payload_json, status, created_at
+                    ) VALUES (?, ?, 'wallet_charge', ?, ?, ?, ?, '{}', 'pending', ?)""",
+                    (session["user_id"], session.get("username", "user"), title, amount, file_or_err, tracking_note, now_str),
+                )
+                req_id = c.lastrowid
+                conn.commit()
+                notify_admin_new_receipt(req_id, session.get("username", "user"), title, amount, tracking_note, file_or_err)
+                msg = f"فیش واریزی شما (کد درخواست #{req_id}) ثبت و برای مدیریت ارسال شد. پس از تایید، کیف پول شما شارژ خواهد شد."
+
     c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
     row = c.fetchone()
     balance = int(row[0] or 0) if row else 0
+
+    c.execute(
+        "SELECT id, request_type, title, amount_toman, receipt_filename, tracking_note, status, reject_reason, decided_at, fulfillment_note, created_at "
+        "FROM payment_requests WHERE user_id=? ORDER BY id DESC LIMIT 20",
+        (session["user_id"],),
+    )
+    history = [
+        {
+            "id": r[0],
+            "request_type": r[1],
+            "title": r[2],
+            "amount_toman": r[3],
+            "receipt_filename": r[4],
+            "tracking_note": r[5],
+            "status": r[6],
+            "reject_reason": r[7],
+            "decided_at": r[8],
+            "fulfillment_note": r[9],
+            "created_at": r[10],
+        }
+        for r in c.fetchall()
+    ]
     conn.close()
-    return render_template("wallet.html", wallet_balance=balance, message=msg)
+    return render_template("wallet.html", wallet_balance=balance, message=msg, error_msg=error_msg, history=history)
 
 
 @app.route("/order_vps", methods=["GET", "POST"])
@@ -695,11 +1334,14 @@ def order_vps_page():
     plans = get_active_plans()
     selected_code = request.args.get("plan", "gold")
     error_msg = None
+    success_msg = None
 
     if request.method == "POST":
         plan_id = int(request.form.get("plan_id", 0) or 0)
         vm_label = request.form.get("vm_name", "").strip()
         root_password = request.form.get("root_password", "").strip()
+        pay_method = request.form.get("pay_method", "receipt").strip()
+        tracking_note = request.form.get("tracking_note", "").strip()
 
         conn = get_db_connection()
         c = conn.cursor()
@@ -718,115 +1360,49 @@ def order_vps_page():
         elif len(root_password) < 6:
             conn.close()
             error_msg = "رمز عبور سرور باید حداقل ۶ کاراکتر باشد."
-        elif session.get("role") not in ["admin", "owner"] and balance < plan_row[7]:
-            conn.close()
-            error_msg = f"موجودی کیف پول شما کافی نیست (مبلغ پلن: {plan_row[7]:,} تومان). لطفاً ابتدا از بخش کیف پول حساب خود را شارژ کنید."
         else:
             _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman = plan_row
-            ram_mb = int(ram_gb) * 1024
             clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label) or f"cc-{p_code}-{int(time.time()) % 10000}"
 
-            # Find first free IP in ip_pool
-            c.execute(
-                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
-            )
-            pool_row = c.fetchone()
-            if pool_row:
-                pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = pool_row
+            if pay_method == "wallet":
+                if session.get("role") not in ["admin", "owner"]:
+                    c.execute(
+                        "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                        (price_toman, session["user_id"], price_toman),
+                    )
+                    if c.rowcount == 0:
+                        conn.close()
+                        error_msg = f"موجودی کیف پول شما کافی نیست ({price_toman:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
+                        return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg)
+
+                _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password)
+                conn.commit()
+                conn.close()
+                return redirect(url_for("dashboard"))
             else:
-                pool_id, primary_ip, netmask, gateway, ipv6, ipv6_gw, mac_addr = (
-                    None,
-                    "در انتظار تخصیص IP",
-                    "25",
-                    "185.42.212.129",
-                    "",
-                    "",
-                    "",
-                )
+                receipt_file = request.files.get("receipt_file")
+                ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+                if not ok_file:
+                    conn.close()
+                    error_msg = file_or_err
+                else:
+                    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                    title = f"خرید {p_name_fa} ({clean_name})"
+                    payload = json.dumps({"plan_id": plan_id, "vm_name": clean_name, "root_password": root_password})
+                    c.execute(
+                        """INSERT INTO payment_requests (
+                            user_id, username, request_type, title, amount_toman, receipt_filename,
+                            tracking_note, payload_json, status, created_at
+                        ) VALUES (?, ?, 'buy_vps', ?, ?, ?, ?, ?, 'pending', ?)""",
+                        (session["user_id"], session.get("username", "user"), title, price_toman, file_or_err, tracking_note, payload, now_str),
+                    )
+                    req_id = c.lastrowid
+                    conn.commit()
+                    conn.close()
+                    notify_admin_new_receipt(req_id, session.get("username", "user"), title, price_toman, tracking_note, file_or_err)
+                    success_msg = f"سفارش {p_name_fa} و فیش واریزی شما (#{req_id}) ثبت شد. به محض تایید ادمین، سرور به صورت خودکار ساخته و در پنل شما فعال می‌شود."
 
-            # Find first ESXi host if registered
-            c.execute("SELECT id, ip, port, username, password, default_datastore, default_network, template_vmdk FROM esxi_hosts ORDER BY id ASC LIMIT 1")
-            esxi_row = c.fetchone()
-            esxi_host_id = esxi_row[0] if esxi_row else None
-            vmid = None
-
-            if esxi_row and pool_row:
-                netplan_yaml = esxi_manager.generate_netplan_yaml(
-                    primary_ipv4=primary_ip,
-                    gateway_ipv4=gateway,
-                    netmask_or_prefix=netmask or "25",
-                    ipv6=ipv6,
-                    ipv6_gateway=ipv6_gw,
-                )
-                meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
-                    vm_name=clean_name,
-                    ssh_user="root",
-                    ssh_password=root_password,
-                    netplan_yaml=netplan_yaml,
-                )
-                seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
-                ok, created_vmid, _ = esxi_manager.create_vm_on_esxi(
-                    esxi_host=esxi_row[1],
-                    esxi_port=esxi_row[2],
-                    esxi_user=esxi_row[3],
-                    esxi_password=esxi_row[4],
-                    vm_name=clean_name,
-                    cpus=cpus,
-                    ram_mb=ram_mb,
-                    disk_gb=disk_gb,
-                    datastore=esxi_row[5],
-                    template_vmdk=esxi_row[7],
-                    network_name=esxi_row[6],
-                    mac_address=mac_addr,
-                    seed_iso_bytes=seed_iso,
-                )
-                if ok:
-                    vmid = created_vmid
-
-            if session.get("role") not in ["admin", "owner"]:
-                c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (price_toman, session["user_id"]))
-
-            now_iso = datetime.datetime.utcnow().isoformat()
-            c.execute(
-                """INSERT INTO servers (
-                    name, ip, username, password, traffic_limit, active, traffic_usage,
-                    updated_at, esxi_host_id, vmid, vm_name, is_suspended,
-                    netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb
-                ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    clean_name,
-                    primary_ip,
-                    root_password,
-                    traffic_gib,
-                    now_iso,
-                    esxi_host_id,
-                    vmid,
-                    clean_name,
-                    netmask,
-                    gateway,
-                    ipv6,
-                    ipv6_gw,
-                    mac_addr,
-                    p_name_fa,
-                    cpus,
-                    ram_mb,
-                    disk_gb,
-                ),
-            )
-            srv_id = c.lastrowid
-            if pool_id:
-                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (srv_id, pool_id))
-            c.execute("INSERT OR IGNORE INTO user_servers (user_id, server_id) VALUES (?, ?)", (session["user_id"], srv_id))
-            c.execute(
-                "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
-                (srv_id, f"سفارش {p_name_fa} ({clean_name}) توسط {session.get('username')} ثبت و تحویل شد.", now_iso),
-            )
-            conn.commit()
-            conn.close()
-            invalidate_servers_cache()
-            return redirect(url_for("dashboard"))
-
-    return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg)
+    return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
 
 
 @app.route("/server/<int:server_id>/power/<action>", methods=["POST"])
@@ -965,66 +1541,52 @@ def user_ip_service_page(server_id):
 
     if request.method == "POST":
         op_type = request.form.get("op_type", "change_ip")
-        c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
-        u_row = c.fetchone()
-        balance = int(u_row[0] or 0) if u_row else 0
+        if op_type not in ("change_ip", "add_extra_ip"):
+            op_type = "change_ip"
+        pay_method = request.form.get("pay_method", "receipt").strip()
+        tracking_note = request.form.get("tracking_note", "").strip()
 
-        c.execute(
-            "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
-        )
-        free_ip = c.fetchone()
-
-        if session.get("role") not in ["admin", "owner"] and balance < ip_service_fee:
-            error_msg = f"موجودی کیف پول شما برای این عملیات کافی نیست (هزینه: {ip_service_fee:,} تومان)."
-        elif not free_ip:
-            error_msg = "در حال حاضر آی‌پی آزادی در بانک آی‌پی موجود نیست. لطفاً به پشتیبانی تیکت بزنید."
+        if pay_method == "wallet":
+            c.execute("SELECT id FROM ip_pool WHERE is_allocated=0 LIMIT 1")
+            if not c.fetchone():
+                error_msg = "در حال حاضر آی‌پی آزادی در بانک آی‌پی موجود نیست."
+            else:
+                if session.get("role") not in ["admin", "owner"]:
+                    c.execute(
+                        "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                        (ip_service_fee, session["user_id"], ip_service_fee),
+                    )
+                    if c.rowcount == 0:
+                        error_msg = f"موجودی کیف پول شما کافی نیست ({ip_service_fee:,} تومان). لطفاً فیش واریزی بارگذاری کنید."
+                if not error_msg:
+                    success_msg = _execute_ip_service(c, server_id, op_type)
+                    conn.commit()
+                    # Refresh srv display
+                    c.execute("SELECT ip, netmask, gateway, extra_ips FROM servers WHERE id=?", (server_id,))
+                    ur = c.fetchone()
+                    if ur:
+                        srv["ip"], srv["netmask"], srv["gateway"], srv["extra_ips"] = ur[0], ur[1], ur[2], ur[3] or ""
         else:
-            pool_id, new_ip, new_mask, new_gw, new_v6, new_v6gw = free_ip
-            if session.get("role") not in ["admin", "owner"]:
-                c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (ip_service_fee, session["user_id"]))
-
-            if op_type == "change_ip":
-                old_ip = srv["ip"]
-                c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE ip_address=? AND server_id=?", (old_ip, server_id))
-                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
+            receipt_file = request.files.get("receipt_file")
+            ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+            if not ok_file:
+                error_msg = file_or_err
+            else:
+                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                op_label = "تغییر آی‌پی اصلی" if op_type == "change_ip" else "خرید آی‌پی اضافه"
+                title = f"{op_label} برای سرور {srv['name']}"
+                payload = json.dumps({"server_id": server_id})
                 c.execute(
-                    "UPDATE servers SET ip=?, netmask=?, gateway=?, ipv6=?, ipv6_gateway=? WHERE id=?",
-                    (new_ip, new_mask, new_gw, new_v6 or srv["ipv6"], new_v6gw or srv["ipv6_gateway"], server_id),
+                    """INSERT INTO payment_requests (
+                        user_id, username, request_type, title, amount_toman, receipt_filename,
+                        tracking_note, payload_json, status, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)""",
+                    (session["user_id"], session.get("username", "user"), op_type, title, ip_service_fee, file_or_err, tracking_note, payload, now_str),
                 )
-                extra_list = [x.strip() for x in re.split(r"[,\n]", srv["extra_ips"]) if x.strip()]
-                netplan_yaml = esxi_manager.generate_netplan_yaml(
-                    primary_ipv4=new_ip,
-                    gateway_ipv4=new_gw,
-                    netmask_or_prefix=new_mask,
-                    extra_ips=extra_list,
-                    ipv6=new_v6 or srv["ipv6"],
-                    ipv6_gateway=new_v6gw or srv["ipv6_gateway"],
-                )
-                esxi_manager.apply_netplan_to_vm(old_ip, srv["username"], srv["password"], netplan_yaml)
-                srv["ip"] = new_ip
-                srv["netmask"] = new_mask
-                srv["gateway"] = new_gw
-                success_msg = f"آی‌پی اصلی سرور با موفقیت به {new_ip} تغییر یافت و روی سرور اعمال شد."
-            elif op_type == "add_extra_ip":
-                c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (server_id, pool_id))
-                current_extras = [x.strip() for x in re.split(r"[,\n]", srv["extra_ips"]) if x.strip()]
-                current_extras.append(f"{new_ip}/{new_mask}")
-                updated_extras = ", ".join(current_extras)
-                c.execute("UPDATE servers SET extra_ips=? WHERE id=?", (updated_extras, server_id))
-                netplan_yaml = esxi_manager.generate_netplan_yaml(
-                    primary_ipv4=srv["ip"],
-                    gateway_ipv4=srv["gateway"],
-                    netmask_or_prefix=srv["netmask"],
-                    extra_ips=current_extras,
-                    ipv6=srv["ipv6"],
-                    ipv6_gateway=srv["ipv6_gateway"],
-                )
-                esxi_manager.apply_netplan_to_vm(srv["ip"], srv["username"], srv["password"], netplan_yaml)
-                srv["extra_ips"] = updated_extras
-                success_msg = f"آی‌پی اضافه {new_ip} با موفقیت به سرور متصل و در Netplan فعال شد."
-
-            conn.commit()
-            invalidate_servers_cache()
+                req_id = c.lastrowid
+                conn.commit()
+                notify_admin_new_receipt(req_id, session.get("username", "user"), title, ip_service_fee, tracking_note, file_or_err)
+                success_msg = f"فیش واریزی شما (#{req_id}) برای «{title}» ثبت شد و پس از تایید ادمین به صورت خودکار روی سرور اعمال می‌شود."
 
     conn.close()
     return render_template(
@@ -1131,6 +1693,96 @@ def manage_plans_page():
     return render_template("manage_plans.html", plans=plans)
 
 
+@app.route("/admin_payments")
+@admin_required
+def admin_payments_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT id, user_id, username, request_type, title, amount_toman, receipt_filename,
+                  tracking_note, status, reject_reason, decided_by, decided_at, fulfillment_note, created_at
+           FROM payment_requests
+           ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END ASC, id DESC"""
+    )
+    requests_list = [
+        {
+            "id": r[0],
+            "user_id": r[1],
+            "username": r[2],
+            "request_type": r[3],
+            "title": r[4],
+            "amount_toman": r[5],
+            "receipt_filename": r[6],
+            "tracking_note": r[7],
+            "status": r[8],
+            "reject_reason": r[9],
+            "decided_by": r[10],
+            "decided_at": r[11],
+            "fulfillment_note": r[12],
+            "created_at": r[13],
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    flash_msg = request.args.get("msg")
+    flash_err = request.args.get("err")
+    return render_template("admin_payments.html", payment_requests=requests_list, flash_msg=flash_msg, flash_err=flash_err)
+
+
+@app.route("/admin_payments/<int:req_id>/decide", methods=["POST"])
+@admin_required
+def admin_decide_payment(req_id):
+    action = request.form.get("action", "").strip()
+    reject_reason = request.form.get("reject_reason", "").strip()
+    actor = f"پنل مدیریت ({session.get('username', 'admin')})"
+    ok, message = decide_payment_request(req_id, action, actor, reject_reason=reject_reason)
+    if ok:
+        return redirect(url_for("admin_payments_page", msg=message))
+    return redirect(url_for("admin_payments_page", err=message))
+
+
+@app.route("/admin_settings", methods=["GET", "POST"])
+@admin_required
+def admin_settings_page():
+    msg = None
+    err = None
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        if action == "save":
+            fields = [
+                "bank_card_number",
+                "bank_card_holder",
+                "bank_sheba",
+                "bank_name",
+                "telegram_bot_token",
+                "admin_chat_id",
+                "telegram_proxy",
+            ]
+            for f_key in fields:
+                if f_key in request.form:
+                    set_system_setting(f_key, request.form.get(f_key, ""))
+            msg = "تنظیمات درگاه کارت‌به‌کارت، ربات تلگرام و پروکسی با موفقیت ذخیره و به صورت زنده اعمال شد."
+        elif action == "test_telegram":
+            res = tg_api_request("getMe", timeout=12)
+            if res.get("ok"):
+                bot_u = res.get("result", {}).get("username", "Bot")
+                cfg = get_system_settings()
+                if cfg.get("admin_chat_id"):
+                    tg_api_request(
+                        "sendMessage",
+                        data={
+                            "chat_id": cfg["admin_chat_id"],
+                            "text": f"✅ اتصال ربات @{bot_u} از طریق پروکسی با موفقیت برقرار شد!",
+                        },
+                    )
+                msg = f"اتصال به تلگرام از طریق پروکسی موفقیت‌آمیز بود! نام کاربری ربات: @{bot_u}"
+            else:
+                err = f"خطا در اتصال به تلگرام: {res.get('description', 'نامشخص')}"
+
+    settings = get_system_settings()
+    return render_template("admin_settings.html", settings=settings, message=msg, error_msg=err)
+
+
 @app.route("/admin_dashboard")
 @admin_required
 def admin_dashboard():
@@ -1152,6 +1804,14 @@ def admin_dashboard():
     free_ips = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM ip_pool")
     total_ips = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'")
+    pending_payments = c.fetchone()[0] or 0
+    c.execute("SELECT COALESCE(SUM(amount_toman), 0) FROM payment_requests WHERE status='approved'")
+    approved_revenue = c.fetchone()[0] or 0
+    c.execute("SELECT COALESCE(SUM(traffic_usage), 0), COALESCE(SUM(traffic_limit), 0) FROM servers")
+    tr_row = c.fetchone()
+    total_traffic_used = round(float(tr_row[0] or 0), 2)
+    total_traffic_limit = round(float(tr_row[1] or 0), 2)
     conn.close()
 
     return render_template(
@@ -1164,6 +1824,10 @@ def admin_dashboard():
         active_users=active_users,
         free_ips=free_ips,
         total_ips=total_ips,
+        pending_payments=pending_payments,
+        approved_revenue=approved_revenue,
+        total_traffic_used=total_traffic_used,
+        total_traffic_limit=total_traffic_limit,
     )
 
 
@@ -1812,55 +2476,69 @@ def toggle_network_action(server_id):
     return redirect(request.referrer or url_for("manage_servers"))
 
 
-# --- Traffic Recharge (Customer & Admin, 750,000 Toman per 1000 GiB) ---
+# --- Traffic Recharge (Customer Receipt / Verified Wallet & Admin, 750,000 Toman per 1000 GiB) ---
 @app.route("/server/<int:server_id>/recharge_traffic", methods=["POST"])
 @login_required
 def recharge_traffic_action(server_id):
     if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
         return "Forbidden", 403
 
-    add_amount = float(request.form.get("add_amount", 100) or 100)
-    if add_amount <= 0:
+    try:
+        add_amount = float(request.form.get("add_amount", 100) or 100)
+    except ValueError:
+        add_amount = 100.0
+    if add_amount <= 0 or add_amount > 100000:
         add_amount = 100.0
     cost_toman = int(add_amount * 750)  # 750,000 Tomans per 1000 GiB (1 TB)
+    pay_method = request.form.get("pay_method", "receipt").strip()
+    tracking_note = request.form.get("tracking_note", "").strip()
 
     conn = get_db_connection()
     c = conn.cursor()
-    if session.get("role") not in ["admin", "owner"]:
-        c.execute("SELECT wallet_balance FROM users WHERE id=?", (session["user_id"],))
-        u_row = c.fetchone()
-        balance = int(u_row[0] or 0) if u_row else 0
-        if balance < cost_toman:
-            conn.close()
-            return redirect(url_for("wallet_page"))
+    c.execute("SELECT name FROM servers WHERE id=?", (server_id,))
+    s_row = c.fetchone()
+    if not s_row:
+        conn.close()
+        return redirect(url_for("dashboard"))
+    srv_name = s_row[0]
 
-    c.execute(
-        """SELECT s.traffic_limit, s.traffic_usage, s.is_suspended, s.vmid, s.name, h.ip, h.port, h.username, h.password
-           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
-        (server_id,),
-    )
-    row = c.fetchone()
-    if row:
-        curr_limit, curr_usage, is_suspended, vmid, srv_name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+    # Admin/Owner or Verified Wallet payment
+    if session.get("role") in ["admin", "owner"] or pay_method == "wallet":
         if session.get("role") not in ["admin", "owner"]:
-            c.execute("UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=?", (cost_toman, session["user_id"]))
-        new_limit = (curr_limit or 0.0) + add_amount
-        c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
-
-        if is_suspended and vmid and esxi_ip:
-            esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True)
-            c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
-
-        now_iso = datetime.datetime.utcnow().isoformat()
-        c.execute(
-            "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
-            (server_id, f"ترافیک سرور {srv_name} به میزان {add_amount} GiB شارژ شد و شبکه فعال گردید.", now_iso),
-        )
+            c.execute(
+                "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                (cost_toman, session["user_id"], cost_toman),
+            )
+            if c.rowcount == 0:
+                conn.close()
+                return redirect(url_for("wallet_page"))
+        _execute_traffic_recharge(c, server_id, add_amount)
         conn.commit()
-        invalidate_servers_cache()
+        conn.close()
+        return redirect(request.referrer or url_for("dashboard"))
 
+    # Receipt upload payment (requires Admin Approval)
+    receipt_file = request.files.get("receipt_file")
+    ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+    if not ok_file:
+        conn.close()
+        return redirect(url_for("wallet_page"))
+
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    title = f"شارژ ترافیک +{add_amount:g} GiB برای سرور {srv_name}"
+    payload = json.dumps({"server_id": server_id, "add_amount": add_amount})
+    c.execute(
+        """INSERT INTO payment_requests (
+            user_id, username, request_type, title, amount_toman, receipt_filename,
+            tracking_note, payload_json, status, created_at
+        ) VALUES (?, ?, 'recharge_traffic', ?, ?, ?, ?, ?, 'pending', ?)""",
+        (session["user_id"], session.get("username", "user"), title, cost_toman, file_or_err, tracking_note, payload, now_str),
+    )
+    req_id = c.lastrowid
+    conn.commit()
     conn.close()
-    return redirect(request.referrer or url_for("dashboard"))
+    notify_admin_new_receipt(req_id, session.get("username", "user"), title, cost_toman, tracking_note, file_or_err)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/add_server", methods=["GET", "POST"])
@@ -2486,265 +3164,178 @@ def license_result(license_key, valid=None):
     )
 
 
-async def show_main_menu(update, context, chat_id, message_id=None):
-    welcome_message = (
-        "🚀 *سلام! به ربات مدیریت سرورهای مجازی و هاستینگ خوش اومدی!* 🚀\n\n"
-        "یکی از گزینه‌های زیر رو انتخاب کن 👇"
-    )
-    keyboard = [
-        [
-            InlineKeyboardButton("🖥️ لیست سرورها", callback_data="list_servers_1"),
-            InlineKeyboardButton("ℹ️ قوانین ریفاند", callback_data="about"),
-        ],
-        [
-            InlineKeyboardButton("🛠️ پشتیبانی", callback_data="support"),
-            InlineKeyboardButton("🎫 ارسال تیکت", callback_data="ticket"),
-        ],
-    ]
-    if str(chat_id) == ADMIN_CHAT_ID:
-        keyboard.extend(
-            [
-                [
-                    InlineKeyboardButton("📬 فوروارد پیام همگانی", callback_data="forward_broadcast"),
-                    InlineKeyboardButton("✉️ ارسال پیام همگانی", callback_data="text_broadcast"),
-                ],
-                [
-                    InlineKeyboardButton("📊 آمار", callback_data="admin_stats"),
-                    InlineKeyboardButton("🎫 تیکت‌های باز", callback_data="open_tickets"),
-                ],
-            ]
-        )
-    keyboard.append([InlineKeyboardButton("© کپی رایت", callback_data="copyright")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    if message_id:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=welcome_message,
-            parse_mode="Markdown",
-            reply_markup=reply_markup,
-        )
-    else:
-        await update.message.reply_text(welcome_message, parse_mode="Markdown", reply_markup=reply_markup)
+# ==============================================================================
+# Proxy-Aware Dynamic Telegram Poller & Traffic Monitor Thread
+# Supports socks5://CBZBWfWxTa:YZSIy26WQC@sub.rskhi.ir:12012 and live token updates
+# ==============================================================================
+ADMIN_REJECT_WAIT = {}  # {chat_id_str: payment_request_id}
 
 
-async def start(update, context):
-    chat_id = str(update.message.chat_id)
-    first_name = update.message.from_user.first_name
-    username = update.message.from_user.username or "نام کاربری ندارد"
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM telegram_users WHERE chat_id=?", (chat_id,))
-    if not c.fetchone():
-        c.execute("INSERT INTO telegram_users (chat_id, first_name, username) VALUES (?, ?, ?)", (chat_id, first_name, username))
-        conn.commit()
-    conn.close()
-    await show_main_menu(update, context, chat_id)
-
-
-async def button(update, context):
-    query = update.callback_query
-    await query.answer()
-    chat_id = query.message.chat_id
-    message_id = query.message.message_id
-    data = query.data
-
-    if data.startswith("list_servers"):
-        page = int(data.split("_")[-1]) if "_" in data and data.split("_")[-1].isdigit() else 1
-        servers_per_page = 10
-        conn = get_db_connection()
-        c = conn.cursor()
-        if str(chat_id) == ADMIN_CHAT_ID:
-            c.execute("SELECT id, ip, name, is_suspended FROM servers WHERE active=1 ORDER BY name ASC")
-            servers = c.fetchall()
-        else:
-            c.execute(
-                "SELECT s.id, s.ip, s.name, s.is_suspended FROM servers s "
-                "JOIN user_servers us ON s.id = us.server_id "
-                "JOIN users u ON us.user_id = u.id "
-                "WHERE u.telegram_chat_id=? AND s.active=1 AND u.active=1 ORDER BY s.name ASC",
-                (str(chat_id),),
-            )
-            servers = c.fetchall()
-        conn.close()
-
-        if not servers:
-            await query.edit_message_text("⚠️ هیچ سروری برای شما ثبت نشده است.", parse_mode="Markdown")
-            return
-
-        total_pages = (len(servers) + servers_per_page - 1) // servers_per_page
-        start_idx = (page - 1) * servers_per_page
-        page_servers = servers[start_idx : start_idx + servers_per_page]
-
-        message = f"🖥️ *لیست سرورها (صفحه {page} از {total_pages}):*\n\n"
-        for idx, (_, ip, name, is_susp) in enumerate(page_servers, start_idx + 1):
-            st = "🔴 [مسدود]" if is_susp else "🟢 [متصل]"
-            message += f"{idx}. {name} ({ip}) — {st}\n"
-
-        keyboard = []
-        row = []
-        for srv_id, _, name, _ in page_servers:
-            row.append(InlineKeyboardButton(f"🔍 {name}", callback_data=f"server_{srv_id}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-
-        nav_buttons = []
-        if page > 1:
-            nav_buttons.append(InlineKeyboardButton("⬅️ قبلی", callback_data=f"list_servers_{page-1}"))
-        if page < total_pages:
-            nav_buttons.append(InlineKeyboardButton("بعدی ➡️", callback_data=f"list_servers_{page+1}"))
-        if nav_buttons:
-            keyboard.append(nav_buttons)
-        keyboard.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="main_menu")])
-        await query.edit_message_text(message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data == "main_menu":
-        await show_main_menu(query, context, chat_id, message_id)
-
-    elif data.startswith("server_"):
-        server_id = int(data.split("_")[1])
-        if not telegram_user_can_access_server(chat_id, server_id):
-            await query.edit_message_text("⛔️ دسترسی به این سرور مجاز نیست.")
-            return
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT ip, name, is_suspended FROM servers WHERE id=?", (server_id,))
-        server = c.fetchone()
-        conn.close()
-        if server:
-            ip, name, is_susp = server
-            st_text = "🔴 مسدود به دلیل اتمام ترافیک" if is_susp else "🟢 شبکه متصل است"
-            message = f"🖥️ *سرور: {name} ({ip})*\nوضعیت پورت: {st_text}\n\nگزینه مورد نظر را انتخاب کنید:"
-            keyboard = [
-                [
-                    InlineKeyboardButton("📊 وضعیت", callback_data=f"status_{server_id}"),
-                    InlineKeyboardButton("📈 مصرف ترافیک", callback_data=f"traffic_{server_id}"),
-                ],
-                [
-                    InlineKeyboardButton("⚡ شارژ ترافیک (+100GB)", callback_data=f"rech_{server_id}"),
-                    InlineKeyboardButton("🔁 ریبوت", callback_data=f"reboot_{server_id}"),
-                ],
-                [InlineKeyboardButton("🔙 بازگشت به لیست", callback_data="list_servers_1")],
-            ]
-            await query.edit_message_text(message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("rech_"):
-        server_id = int(data.split("_")[1])
-        if not telegram_user_can_access_server(chat_id, server_id):
-            await query.edit_message_text("⛔️ دسترسی ندارید.")
-            return
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            """SELECT s.traffic_limit, s.is_suspended, s.vmid, s.name, h.ip, h.port, h.username, h.password
-               FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
-            (server_id,),
-        )
-        row = c.fetchone()
-        if row:
-            curr_limit, is_suspended, vmid, name, esxi_ip, esxi_port, esxi_user, esxi_pass = row
-            new_limit = (curr_limit or 0.0) + 100.0
-            c.execute("UPDATE servers SET traffic_limit=? WHERE id=?", (new_limit, server_id))
-            if is_suspended and vmid and esxi_ip:
-                esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_user, esxi_pass, vmid, connected=True)
-                c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
-            conn.commit()
-            await query.edit_message_text(f"✅ ترافیک سرور {name} به میزان ۱۰۰ گیگابایت شارژ شد و پورت شبکه فعال گردید! 🚀")
-        conn.close()
-
-    elif data.startswith("status_"):
-        server_id = int(data.split("_")[1])
-        status = get_server_status(server_id)
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"server_{server_id}")]]
-        await query.edit_message_text(status, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("traffic_"):
-        server_id = int(data.split("_")[1])
-        traffic = get_server_traffic(server_id)
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"server_{server_id}")]]
-        await query.edit_message_text(traffic, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-
-async def handle_message(update, context):
-    pass
-
-
-def get_server_status(server_id):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT ip, username, password, name FROM servers WHERE id=?", (server_id,))
-    server = c.fetchone()
-    conn.close()
-    if server:
-        ip, username, password, name = server
-        try:
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ip, username=username, password=password, timeout=10)
-            _, stdout, _ = ssh.exec_command("uptime")
-            uptime = stdout.read().decode().strip()
-            ssh.close()
-            return f"🖥️ *وضعیت سرور: {name} ({ip})*\n\n✅ سرور فعال و آنلاین است!\n⏳ *آپتایم:* `{uptime}`"
-        except Exception as e:
-            return f"🖥️ *وضعیت سرور: {name} ({ip})*\n\n⚠️ سرور غیرقابل دسترسی است: {str(e)}"
-    return "⚠️ سرور پیدا نشد."
-
-
-def get_server_traffic(server_id):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT ip, username, password, traffic_limit, traffic_usage, reset_date, name FROM servers WHERE id=?", (server_id,))
-    server = c.fetchone()
-    conn.close()
-    if server:
-        ip, username, password, traffic_limit, traffic_usage, reset_date, name = server
-        traffic_limit = float(traffic_limit or 0.0)
-        try:
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ip, username=username, password=password, timeout=10)
-            nic = detect_iface(ssh)
-            traffic_cmd = build_vnstat_monthly_cmd(nic, reset_date)
-            _, stdout, _ = ssh.exec_command(traffic_cmd)
-            traffic_usage_output = stdout.read().decode().strip()
-            traffic_usage_new = float(traffic_usage_output.splitlines()[-1]) if traffic_usage_output else 0.0
-            ssh.close()
-            return (
-                f"📈 *ترافیک سرور: {name} ({ip})*\n\n"
-                f"📊 *مصرف فعلی:* `{traffic_usage_new:.2f} GiB`\n"
-                f"🚧 *محدودیت:* `{traffic_limit if traffic_limit > 0 else 'نامحدود'} GiB`"
-            )
-        except Exception as e:
-            return f"📈 *ترافیک سرور: {name} ({ip})*\n\n⚠️ خطا در خواندن vnstat: {str(e)}"
-    return "⚠️ سرور پیدا نشد."
-
-
-async def send_telegram_message(bot, chat_id, message):
+def send_telegram_alert(chat_id: str | int, text: str):
     if not chat_id or str(chat_id) == "YOUR_CHAT_ID":
         return
-    try:
-        await bot.send_message(chat_id=chat_id, text=message)
-    except Exception as e:
-        logging.error(f"Failed to send Telegram message to {chat_id}: {str(e)}")
+    tg_api_request("sendMessage", data={"chat_id": str(chat_id), "text": text, "parse_mode": "Markdown"})
 
 
-def monitor_servers(application):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+def _handle_tg_update(upd: dict):
+    cfg = get_system_settings()
+    admin_chat = (cfg.get("admin_chat_id") or "").strip()
+
+    # 1. Handle Callback Queries (Approve / Reject Receipts & Server Menu)
+    if "callback_query" in upd:
+        cq = upd["callback_query"]
+        cq_id = cq.get("id")
+        data = cq.get("data", "")
+        msg = cq.get("message", {})
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        message_id = msg.get("message_id")
+
+        if data.startswith("pay_approve:"):
+            if admin_chat and chat_id != admin_chat:
+                tg_api_request("answerCallbackQuery", data={"callback_query_id": cq_id, "text": "⛔ فقط مدیر مجاز است.", "show_alert": True})
+                return
+            req_id = int(data.split(":")[1])
+            ok, result_msg = decide_payment_request(req_id, "approve", "ربات تلگرام")
+            tg_api_request("answerCallbackQuery", data={"callback_query_id": cq_id, "text": result_msg[:190], "show_alert": True})
+            return
+
+        if data.startswith("pay_reject:"):
+            if admin_chat and chat_id != admin_chat:
+                tg_api_request("answerCallbackQuery", data={"callback_query_id": cq_id, "text": "⛔ فقط مدیر مجاز است.", "show_alert": True})
+                return
+            req_id = int(data.split(":")[1])
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("SELECT status FROM payment_requests WHERE id=?", (req_id,))
+            r_st = c.fetchone()
+            conn.close()
+            if not r_st or r_st[0] != "pending":
+                tg_api_request(
+                    "answerCallbackQuery",
+                    data={"callback_query_id": cq_id, "text": "⚠️ این درخواست قبلاً بسته شده است و قابل تغییر نیست.", "show_alert": True},
+                )
+                return
+            ADMIN_REJECT_WAIT[chat_id] = req_id
+            tg_api_request("answerCallbackQuery", data={"callback_query_id": cq_id, "text": "لطفاً علت رد شدن را بنویسید."})
+            tg_api_request(
+                "sendMessage",
+                data={
+                    "chat_id": chat_id,
+                    "text": f"📝 لطفاً *علت رد شدن درخواست شماره #{req_id}* را در قالب یک پیام متنی ارسال کنید (نوشتن علت الزامی است؛ برای انصراف `/cancel` را بفرستید):",
+                    "parse_mode": "Markdown",
+                },
+            )
+            return
+
+        tg_api_request("answerCallbackQuery", data={"callback_query_id": cq_id})
+
+        if data.startswith("list_servers"):
+            conn = get_db_connection()
+            c = conn.cursor()
+            if admin_chat and chat_id == admin_chat:
+                c.execute("SELECT id, ip, name, is_suspended, traffic_usage, traffic_limit FROM servers WHERE active=1 ORDER BY id DESC LIMIT 15")
+            else:
+                c.execute(
+                    "SELECT s.id, s.ip, s.name, s.is_suspended, s.traffic_usage, s.traffic_limit FROM servers s "
+                    "JOIN user_servers us ON s.id = us.server_id JOIN users u ON us.user_id = u.id "
+                    "WHERE u.telegram_chat_id=? AND s.active=1 ORDER BY s.id DESC LIMIT 15",
+                    (chat_id,),
+                )
+            rows = c.fetchall()
+            conn.close()
+            if not rows:
+                tg_api_request("sendMessage", data={"chat_id": chat_id, "text": "⚠️ هیچ سروری برای حساب شما ثبت نشده است."})
+                return
+            lines = ["🖥️ *لیست سرورهای فعال:*\n"]
+            for r in rows:
+                st = "🔴 مسدود" if r[3] else "🟢 آنلاین"
+                lines.append(f"• *{r[2]}* (`{r[1]}`) — {st} | مصرف: `{(r[4] or 0):.1f}/{r[5] or 0:g} GiB`")
+            tg_api_request("sendMessage", data={"chat_id": chat_id, "text": "\n".join(lines), "parse_mode": "Markdown"})
+            return
+
+    # 2. Handle Text Messages & Commands
+    if "message" in upd:
+        msg = upd["message"]
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        text = (msg.get("text") or "").strip()
+        if not text:
+            return
+
+        if text == "/cancel" and chat_id in ADMIN_REJECT_WAIT:
+            ADMIN_REJECT_WAIT.pop(chat_id, None)
+            tg_api_request("sendMessage", data={"chat_id": chat_id, "text": "✅ عملیات رد درخواست لغو شد."})
+            return
+
+        # If Admin is currently writing the mandatory rejection reason for a payment request
+        if chat_id in ADMIN_REJECT_WAIT and not text.startswith("/"):
+            req_id = ADMIN_REJECT_WAIT.pop(chat_id)
+            ok, result_msg = decide_payment_request(req_id, "reject", "ربات تلگرام", reject_reason=text)
+            tg_api_request("sendMessage", data={"chat_id": chat_id, "text": f"{'✅' if ok else '⚠️'} {result_msg}"})
+            return
+
+        if text.startswith("/start"):
+            first_name = msg.get("from", {}).get("first_name", "کاربر")
+            username = msg.get("from", {}).get("username", "")
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR IGNORE INTO telegram_users (chat_id, first_name, username) VALUES (?, ?, ?)", (chat_id, first_name, username))
+            conn.commit()
+            conn.close()
+            kb = {
+                "inline_keyboard": [
+                    [{"text": "🖥️ مشاهده سرورها و مصرف حجم", "callback_data": "list_servers_1"}],
+                ]
+            }
+            welcome = (
+                f"✨ سلام *{first_name}* عزیز، به ربات رسمی *کلود کیوب (Cloud Cube)* خوش آمدید!\n\n"
+                f"🆔 چت آیدی شما: `{chat_id}`\n"
+                "می‌توانید این شناسه را در بخش پروفایل پنل وب وارد کنید تا وضعیت فیش‌های واریزی و هشدارهای ترافیک برایتان ارسال شود."
+            )
+            if admin_chat and chat_id == admin_chat:
+                welcome += "\n\n👑 *دسترسی مدیریت فعال است:* فیش‌های واریزی مشتریان به صورت آنی برای تایید یا رد به همین چت ارسال می‌شوند."
+            tg_api_request("sendMessage", data={"chat_id": chat_id, "text": welcome, "parse_mode": "Markdown", "reply_markup": json.dumps(kb)})
+
+
+def telegram_dynamic_poller():
+    """Continuously polls Telegram updates using live token & SOCKS5 proxy from system_settings."""
+    offset = 0
+    while True:
+        try:
+            cfg = get_system_settings()
+            token = (cfg.get("telegram_bot_token") or "").strip()
+            if not token or token == "YOUR_BOT_TOKEN":
+                time.sleep(5)
+                continue
+            res = tg_api_request("getUpdates", data={"offset": offset, "timeout": 10}, timeout=16)
+            if res.get("ok") and isinstance(res.get("result"), list):
+                for upd in res["result"]:
+                    offset = max(offset, int(upd.get("update_id", 0)) + 1)
+                    try:
+                        _handle_tg_update(upd)
+                    except Exception as he:
+                        logging.error(f"Error handling Telegram update: {he}")
+            else:
+                time.sleep(4)
+        except Exception as e:
+            logging.error(f"Telegram poller loop error: {e}")
+            time.sleep(5)
+
+
+def monitor_servers():
     while True:
         conn = get_db_connection()
         c = conn.cursor()
         c.execute(
-            """SELECT s.id, s.ip, s.username, s.password, s.traffic_limit, s.telegram_chat_id, s.traffic_usage, 
+            """SELECT s.id, s.ip, s.username, s.password, s.traffic_limit, s.telegram_chat_id, s.traffic_usage,
                       s.reset_date, s.name, s.esxi_host_id, s.vmid, s.is_suspended,
                       h.ip, h.port, h.username, h.password
                FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.active=1"""
         )
         servers = c.fetchall()
         conn.close()
+
+        cfg = get_system_settings()
+        admin_chat = (cfg.get("admin_chat_id") or "").strip()
 
         for server in servers:
             (
@@ -2799,13 +3390,14 @@ def monitor_servers(application):
                         conn.commit()
                         msg = (
                             f"🚨 *اتمام ترافیک:* پورت شبکه سرور {name} ({ip}) در ESXi مسدود شد "
-                            f"({traffic_usage_new:.2f} GiB > {traffic_limit:.2f} GiB). برای اتصال، ترافیک را شارژ کنید."
+                            f"({traffic_usage_new:.2f} GiB > {traffic_limit:.2f} GiB). برای اتصال مجدد، ترافیک را از پنل شارژ کنید."
                         )
                         c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (server_id, msg, now_iso))
                         conn.commit()
                         if telegram_chat_id:
-                            loop.run_until_complete(send_telegram_message(application.bot, telegram_chat_id, msg))
-                        loop.run_until_complete(send_telegram_message(application.bot, ADMIN_CHAT_ID, msg))
+                            send_telegram_alert(telegram_chat_id, msg)
+                        if admin_chat:
+                            send_telegram_alert(admin_chat, msg)
                     elif not is_suspended:
                         ssh.exec_command("sudo shutdown -h now")
 
@@ -2819,7 +3411,7 @@ def monitor_servers(application):
                     c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)", (server_id, msg, now_iso))
                     conn.commit()
                     if telegram_chat_id:
-                        loop.run_until_complete(send_telegram_message(application.bot, telegram_chat_id, msg))
+                        send_telegram_alert(telegram_chat_id, msg)
 
                 ssh.close()
             except Exception as e:
@@ -2827,7 +3419,7 @@ def monitor_servers(application):
             finally:
                 conn.close()
 
-        time.sleep(5)
+        time.sleep(10)
 
 
 def run_flask():
@@ -2839,26 +3431,15 @@ def main():
     init_default_license()
     startup_check()
 
-    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_BOT_TOKEN":
-        logging.warning("TELEGRAM_TOKEN تنظیم نشده است؛ فقط وب‌پنل Flask اجرا می‌شود.")
-        run_flask()
-        return
+    # Start dynamic Telegram poller thread (automatically uses proxy & live token from system_settings)
+    tg_thread = threading.Thread(target=telegram_dynamic_poller, daemon=True)
+    tg_thread.start()
 
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    monitor_thread = threading.Thread(target=monitor_servers, args=(application,), daemon=True)
+    # Start background server traffic monitoring thread
+    monitor_thread = threading.Thread(target=monitor_servers, daemon=True)
     monitor_thread.start()
 
-    if platform.system() == "Emscripten":
-        asyncio.ensure_future(application.run_polling())
-    else:
-        application.run_polling()
+    run_flask()
 
 
 if __name__ == "__main__":

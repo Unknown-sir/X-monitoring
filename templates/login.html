@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}ورود به پنل کاربری | کلود کیوب{% endblock %}
+{% block title %}ورود | کلود کیوب{% endblock %}
 {% block auth_content %}
 <div class="auth-wrapper">
     <div class="auth-card">
         <div class="text-center mb-4">
-            <a href="{{ url_for('landing') }}" class="d-inline-flex align-items-center justify-content-center mb-3 xm-logo-badge" style="width: 56px; height: 56px; font-size: 1.5rem;">
-                <i class="fas fa-cubes"></i>
+            <a href="{{ url_for('landing') }}" class="xm-logo-badge mb-3" style="width: 54px; height: 54px; font-size: 1.4rem;">
+                <i class="fas fa-cube"></i>
             </a>
-            <h1 class="fw-extrabold mb-1" style="font-size: 1.45rem;">ورود به پنل کاربری کلود کیوب</h1>
-            <p class="text-muted small mb-0">مدیریت سرورهای مجازی، مانیتورینگ ترافیک و سفارش آنی</p>
+            <h1 class="fw-extrabold mb-1" style="font-size: 1.35rem;">ورود به پنل کلود کیوب</h1>
+            <span class="small text-muted">Cloud Cube Console</span>
         </div>
 
         {% if error_msg %}
         <div class="alert alert-danger d-flex align-items-center gap-2">
-            <i class="fas fa-triangle-exclamation"></i>
+            <i class="fas fa-circle-exclamation"></i>
             <span>{{ error_msg }}</span>
         </div>
         {% endif %}
@@ -27,20 +27,17 @@
                 <label class="form-label">رمز عبور</label>
                 <input type="password" name="password" class="form-control font-mono" placeholder="••••••••" required>
             </div>
-            <button type="submit" class="btn btn-primary w-100 py-2 mt-2 rounded-pill">
+            <button type="submit" class="btn btn-primary w-100 py-2 mt-1 rounded-pill">
                 <i class="fas fa-right-to-bracket"></i>
-                <span>ورود به پنل کلود کیوب</span>
+                <span>ورود به کنسول</span>
             </button>
         </form>
 
         <div class="text-center mt-4 pt-3 border-top small">
             <div class="mb-2">
-                هنوز حساب کاربری ندارید؟
-                <a href="{{ url_for('register') }}" class="fw-bold text-gold">ثبت‌نام رایگان و آنی</a>
+                حساب ندارید؟ <a href="{{ url_for('register') }}" class="fw-bold">ثبت‌نام سریع</a>
             </div>
-            <a href="{{ url_for('landing') }}" class="text-muted">
-                <i class="fas fa-arrow-right me-1"></i> بازگشت به صفحه اصلی سایت کلود کیوب
-            </a>
+            <a href="{{ url_for('landing') }}" class="text-muted"><i class="fas fa-arrow-right me-1"></i> صفحه اصلی سایت</a>
         </div>
     </div>
 </div>

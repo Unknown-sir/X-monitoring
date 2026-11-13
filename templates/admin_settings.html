@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}تنظیمات کارت، ربات و پروکسی | کلود کیوب{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-sliders text-primary me-1"></i> تنظیمات حساب بانکی، ربات تلگرام و پروکسی ایران
+        </h1>
+        <span class="small text-muted">تمامی تغییرات بدون نیاز به ری‌استارت شدن پروژه به صورت زنده اعمال می‌شوند</span>
+    </div>
+    <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
+        <input type="hidden" name="action" value="test_telegram">
+        <button type="submit" class="btn btn-sm btn-outline-info rounded-pill px-3">
+            <i class="fas fa-satellite-dish"></i> تست اتصال ربات تلگرام با پروکسی
+        </button>
+    </form>
+</div>
+
+{% if message %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ message }}</div>
+{% endif %}
+{% if error_msg %}
+<div class="alert alert-danger"><i class="fas fa-circle-exclamation me-1"></i> {{ error_msg }}</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('admin_settings_page') }}" class="anim-fade-up delay-1">
+    <input type="hidden" name="action" value="save">
+    <div class="row g-4">
+        <!-- Bank Card Settings -->
+        <div class="col-12 col-xl-6">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.1rem;">
+                    <i class="fas fa-credit-card text-gold me-1"></i> اطلاعات کارت بانکی مدیریت (جهت نمایش به مشتریان)
+                </h3>
+                <div class="d-flex flex-column gap-3">
+                    <div>
+                        <label class="form-label">شماره کارت ۱۶ رقمی</label>
+                        <input type="text" name="bank_card_number" value="{{ settings.bank_card_number }}" class="form-control font-mono" required>
+                    </div>
+                    <div>
+                        <label class="form-label">نام صاحب حساب</label>
+                        <input type="text" name="bank_card_holder" value="{{ settings.bank_card_holder }}" class="form-control" required>
+                    </div>
+                    <div>
+                        <label class="form-label">شماره شبا (IBAN)</label>
+                        <input type="text" name="bank_sheba" value="{{ settings.bank_sheba }}" class="form-control font-mono">
+                    </div>
+                    <div>
+                        <label class="form-label">نام بانک</label>
+                        <input type="text" name="bank_name" value="{{ settings.bank_name }}" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Telegram Bot & Proxy Settings -->
+        <div class="col-12 col-xl-6">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.1rem;">
+                    <i class="fab fa-telegram text-info me-1"></i> تنظیمات زنده ربات تلگرام و پروکسی SOCKS5
+                </h3>
+                <div class="d-flex flex-column gap-3">
+                    <div>
+                        <label class="form-label">توکن ربات تلگرام (Bot Token)</label>
+                        <input type="text" name="telegram_bot_token" value="{{ settings.telegram_bot_token }}" class="form-control font-mono" placeholder="123456789:ABCdef...">
+                    </div>
+                    <div>
+                        <label class="form-label">چت آیدی عددی مدیر (Admin Chat ID جهت دریافت فیش‌ها)</label>
+                        <input type="text" name="admin_chat_id" value="{{ settings.admin_chat_id }}" class="form-control font-mono" placeholder="مثلاً 987654321">
+                    </div>
+                    <div>
+                        <label class="form-label">پروکسی اتصال به تلگرام (SOCKS5 / HTTP مخصوص سرور ایران)</label>
+                        <input type="text" name="telegram_proxy" value="{{ settings.telegram_proxy }}" class="form-control font-mono" placeholder="socks5://user:pass@host:port">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4 text-end">
+        <button type="submit" class="btn btn-lg btn-primary rounded-pill px-5">
+            <i class="fas fa-floppy-disk"></i> ذخیره و اعمال آنی تنظیمات
+        </button>
+    </div>
+</form>
+{% endblock %}

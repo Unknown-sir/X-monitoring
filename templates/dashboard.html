@@ -1,75 +1,109 @@
 {% extends "base.html" %}
-{% block title %}پنل کاربری و سرورهای من | کلود کیوب{% endblock %}
+{% block title %}پنل کاربری | کلود کیوب{% endblock %}
 {% block content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-    <div>
-        <h1 class="fw-extrabold mb-1 d-flex align-items-center gap-2" style="font-size: 1.45rem;">
-            <i class="fas fa-cubes text-gold"></i>
-            <span>پنل کاربری کلود کیوب — مدیریت سرویس‌ها</span>
-        </h1>
-        <p class="text-muted small mb-0">
-            مدیریت لحظه‌ای سرورهای مجازی، مانیتورینگ زنده ترافیک، کنترل پاور، ریبیلد خودکار اوبونتو و خدمات آی‌پی
-        </p>
+
+{% set ns = namespace(total_used=0.0, total_limit=0.0, active_cnt=0) %}
+{% for s in servers %}
+    {% set ns.total_used = ns.total_used + (s[4] or 0.0) %}
+    {% set ns.total_limit = ns.total_limit + (s[3] or 0.0) %}
+    {% if s[8] %}{% set ns.active_cnt = ns.active_cnt + 1 %}{% endif %}
+{% endfor %}
+{% set total_pct = ((ns.total_used / ns.total_limit) * 100)|round(1) if ns.total_limit > 0 else 0 %}
+{% set dash_offset = (289 - (289 * ([total_pct, 100]|min) / 100))|round(1) %}
+
+<!-- Top Header Actions -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4 anim-fade-up">
+    <div class="d-flex align-items-center gap-3">
+        <span class="xm-logo-badge"><i class="fas fa-layer-group"></i></span>
+        <div>
+            <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">کنسول ابری من</h1>
+            <span class="small text-muted">{{ servers|length }} سرور ثبت‌شده • {{ ns.active_cnt }} سرور آنلاین</span>
+        </div>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <a href="{{ url_for('order_vps_page') }}" class="btn btn-gold rounded-pill px-3">
-            <i class="fas fa-cart-plus"></i>
-            <span>خرید سرور مجازی جدید</span>
+        <a href="{{ url_for('order_vps_page') }}" class="btn btn-primary rounded-pill px-3">
+            <i class="fas fa-plus"></i>
+            <span>سفارش سرور جدید</span>
         </a>
         <a href="{{ url_for('wallet_page') }}" class="btn btn-outline-primary rounded-pill px-3">
             <i class="fas fa-wallet"></i>
-            <span>افزایش موجودی کیف پول</span>
-        </a>
-        <a href="{{ url_for('tickets_page') }}" class="btn btn-outline-info rounded-pill px-3">
-            <i class="fas fa-headset"></i>
-            <span>ارسال تیکت پشتیبانی</span>
+            <span>شارژ کیف پول (ارسال فیش)</span>
         </a>
     </div>
 </div>
 
-<!-- Customer Quick Overview Cards -->
-<div class="row g-3 mb-4">
-    <div class="col-12 col-md-3">
-        <div class="card stat-card">
+<!-- Visual Analytics & Charts Row -->
+<div class="row g-3 mb-4 anim-fade-up delay-1">
+    <!-- Chart 1: Total Bandwidth Donut Ring -->
+    <div class="col-12 col-md-4">
+        <div class="card p-3 h-100 d-flex flex-row align-items-center justify-content-between">
             <div>
-                <div class="small text-muted">سرویس‌های فعال من</div>
-                <div class="fw-extrabold mt-1" style="font-size: 1.6rem;">{{ servers|length }} <span class="small fw-normal text-muted">سرور</span></div>
+                <div class="small text-muted mb-1">کل مصرف ترافیک سرویس‌ها</div>
+                <div class="fw-extrabold font-mono" style="font-size: 1.35rem; color: var(--accent);">
+                    {{ "%.1f"|format(ns.total_used) }} <span class="small text-muted">/ {{ "%.0f"|format(ns.total_limit) }} GiB</span>
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-primary-subtle font-mono">{{ total_pct }}% مصرف‌شده</span>
+                </div>
             </div>
-            <span class="stat-icon bg-primary-subtle"><i class="fas fa-server"></i></span>
+            <div style="position: relative; width: 104px; height: 104px; display: flex; align-items: center; justify-content: center;">
+                <svg width="104" height="104" viewBox="0 0 120 120" style="transform: rotate(-90deg);">
+                    <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(139,92,246,0.14)" stroke-width="13"></circle>
+                    <circle cx="60" cy="60" r="46" fill="none" stroke="#8B5CF6" stroke-width="13" stroke-dasharray="289" stroke-dashoffset="{{ dash_offset }}" stroke-linecap="round"></circle>
+                </svg>
+                <span class="font-mono fw-extrabold" style="position: absolute; font-size: 0.9rem;">{{ total_pct }}%</span>
+            </div>
         </div>
     </div>
-    <div class="col-12 col-md-3">
-        <div class="card stat-card">
-            <div>
-                <div class="small text-muted">موجودی کیف پول</div>
-                <div class="fw-extrabold text-gold mt-1" style="font-size: 1.35rem;">{{ "{:,}".format(user_wallet|default(0)) }} <span class="small fw-normal text-muted">تومان</span></div>
+
+    <!-- Chart 2: Server Bandwidth Distribution Visual Chart -->
+    <div class="col-12 col-md-5">
+        <div class="card p-3 h-100 d-flex flex-column justify-content-between">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-bold"><i class="fas fa-chart-column text-primary me-1"></i> نمودار حجم سرورها (GiB)</span>
+                <span class="badge bg-info-subtle">Live Telemetry</span>
             </div>
-            <a href="{{ url_for('wallet_page') }}" class="stat-icon bg-warning-subtle" title="شارژ کیف پول"><i class="fas fa-plus"></i></a>
+            {% if servers %}
+            <div class="d-flex flex-column gap-2 my-auto">
+                {% for s in servers[:3] %}
+                {% set spct = (((s[4] or 0) / (s[3] or 1)) * 100)|round(1) %}
+                <div>
+                    <div class="d-flex justify-content-between small mb-1" style="font-size: 0.76rem;">
+                        <span class="font-mono fw-bold">{{ s[1] }} ({{ s[2] }})</span>
+                        <span class="font-mono text-gold">{{ "%.1f"|format(s[4] or 0) }} / {{ "%.0f"|format(s[3] or 0) }} GiB</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar" style="width: {{ [spct, 100]|min }}%;"></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center text-muted small my-auto">پس از سفارش سرور، نمودار مصرف در این بخش نمایش داده می‌شود.</div>
+            {% endif %}
         </div>
     </div>
+
+    <!-- KPI 3: Wallet & Receipt Status -->
     <div class="col-12 col-md-3">
-        <div class="card stat-card">
-            <div>
-                <div class="small text-muted">تعرفه ترافیک اضافه</div>
-                <div class="fw-bold mt-1" style="font-size: 1.05rem;">هر ترابایت ۷۵۰,۰۰۰ <span class="small text-muted">تومان</span></div>
-                <div class="small text-primary">وصل خودکار پورت پس از شارژ</div>
+        <div class="card p-3 h-100 d-flex flex-column justify-content-between">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="small text-muted">موجودی کیف پول</div>
+                    <div class="fw-extrabold font-mono text-gold mt-1" style="font-size: 1.35rem;">{{ "{:,}".format(user_wallet|default(0)) }} <span class="small text-muted">تومان</span></div>
+                </div>
+                <span class="stat-icon bg-primary-subtle"><i class="fas fa-wallet"></i></span>
             </div>
-            <span class="stat-icon bg-info-subtle"><i class="fas fa-bolt"></i></span>
-        </div>
-    </div>
-    <div class="col-12 col-md-3">
-        <div class="card stat-card">
-            <div>
-                <div class="small text-muted">تغییر یا افزودن IP</div>
-                <div class="fw-bold mt-1" style="font-size: 1.05rem;">۳۴۰,۰۰۰ <span class="small text-muted">تومان</span></div>
-                <div class="small text-gold">تزریق خودکار در Netplan</div>
+            <div class="d-flex gap-2 mt-3">
+                <a href="{{ url_for('wallet_page') }}" class="btn btn-sm btn-primary w-100 rounded-pill">
+                    <i class="fas fa-upload"></i> ارسال فیش واریزی
+                </a>
             </div>
-            <span class="stat-icon bg-success-subtle"><i class="fas fa-network-wired"></i></span>
         </div>
     </div>
 </div>
 
-<!-- Active Servers List with Full Customer Controls -->
+<!-- Active Servers Grid -->
 {% if servers %}
 <div class="row g-4 mb-4">
     {% for s in servers %}
@@ -82,116 +116,105 @@
     {% set esxi_id = s[6] %}
     {% set vmid = s[7] %}
     {% set is_active = s[8] %}
-    {% set plan_title = s[9] or 'سرور مجازی ابری' %}
+    {% set plan_title = s[9] or 'Cloud VPS' %}
     {% set cpus = s[10] or 2 %}
     {% set ram_mb = s[11] or 2048 %}
     {% set disk_gb = s[12] or 20 %}
     {% set pct = ((usage_gib / limit_gib) * 100)|round(1) if limit_gib > 0 else 0 %}
+    {% set ring_off = (176 - (176 * ([pct, 100]|min) / 100))|round(1) %}
 
-    <div class="col-12 col-xl-6">
+    <div class="col-12 col-xl-6 anim-fade-up delay-2">
         <div class="cc-server-card">
-            <!-- Header: Name, Plan, Status -->
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div class="d-flex align-items-center gap-3">
-                    <span class="stat-icon {% if is_susp %}bg-danger-subtle{% elif is_active %}bg-primary-subtle{% else %}bg-secondary-subtle{% endif %}">
-                        <i class="fas fa-server"></i>
-                    </span>
+                    <!-- Circular Radial Traffic Gauge -->
+                    <div class="cc-ring-wrap">
+                        <svg viewBox="0 0 66 66">
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="rgba(139,92,246,0.15)" stroke-width="6"></circle>
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="{% if pct >= 90 %}#F43F5E{% elif pct >= 75 %}#F59E0B{% else %}#8B5CF6{% endif %}" stroke-width="6" stroke-dasharray="176" stroke-dashoffset="{{ ring_off }}" stroke-linecap="round"></circle>
+                        </svg>
+                        <span class="cc-ring-label font-mono">{{ pct|int }}%</span>
+                    </div>
                     <div>
                         <div class="d-flex align-items-center gap-2">
-                            <h3 class="fw-bold m-0" style="font-size: 1.15rem;">{{ srv_name }}</h3>
-                            <span class="badge bg-gold">{{ plan_title }}</span>
+                            <h3 class="fw-extrabold m-0 font-mono" style="font-size: 1.15rem;">{{ srv_name }}</h3>
+                            <span class="badge bg-purple">{{ plan_title }}</span>
                         </div>
-                        <div class="small text-muted mt-1">
-                            آی‌پی سرور: <strong class="font-mono text-primary">{{ srv_ip }}</strong>
-                            {% if vmid %}<span class="font-mono ms-2">(VMID: #{{ vmid }})</span>{% endif %}
+                        <div class="small text-muted mt-1 font-mono">
+                            <i class="fas fa-network-wired text-primary me-1"></i> {{ srv_ip }}
+                            <span class="ms-2">• {{ cpus }}C / {{ (ram_mb / 1024)|int }}G / {{ disk_gb }}G SSD</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="d-flex flex-column align-items-end gap-1">
+                <div class="text-end">
                     {% if is_susp %}
-                        <span class="badge bg-danger-subtle"><i class="fas fa-ban"></i> مسدود (اتمام ترافیک)</span>
+                        <span class="badge bg-danger-subtle"><i class="fas fa-ban"></i> مسدود (اتمام حجم)</span>
                     {% elif is_active %}
-                        <span class="badge bg-success-subtle"><i class="fas fa-circle-check"></i> روشن و فعال</span>
+                        <span class="badge bg-success-subtle"><span class="pulse-dot me-1"></span> آنلاین</span>
                     {% else %}
                         <span class="badge bg-warning-subtle"><i class="fas fa-power-off"></i> خاموش</span>
                     {% endif %}
-                    <span class="small font-mono text-muted">{{ cpus }} Core • {{ (ram_mb / 1024)|int }}GB RAM • {{ disk_gb }}GB SSD</span>
+                    <div class="small font-mono text-gold mt-1">{{ "%.2f"|format(usage_gib) }} / {{ "%.0f"|format(limit_gib) }} GiB</div>
                 </div>
             </div>
 
-            <!-- Traffic Meter Bar -->
-            <div class="p-3 rounded" style="background: rgba(0, 0, 0, 0.28); border: 1px solid var(--border-subtle);">
-                <div class="d-flex justify-content-between align-items-center small mb-2">
-                    <span class="fw-bold"><i class="fas fa-gauge-high text-primary me-1"></i> مصرف ترافیک دوره:</span>
-                    <span class="font-mono">
-                        <strong>{{ "%.2f"|format(usage_gib) }}</strong> / {{ "%.0f"|format(limit_gib) }} GiB
-                        <span class="badge {% if pct >= 90 %}bg-danger-subtle{% elif pct >= 75 %}bg-warning-subtle{% else %}bg-primary-subtle{% endif %}">{{ pct }}%</span>
-                    </span>
-                </div>
-                <div class="progress">
-                    <div class="progress-bar" style="width: {{ [pct, 100]|min }}%; {% if pct >= 90 %}background: #ef4444;{% elif pct >= 75 %}background: #f59e0b;{% endif %}"></div>
-                </div>
-            </div>
-
-            <!-- Primary Customer Control Buttons -->
-            <div class="cc-action-grid">
+            <!-- Action Toolbar -->
+            <div class="d-flex flex-wrap gap-2 pt-2 border-top">
                 <a href="{{ url_for('live_port', server_id=srv_id) }}" class="btn btn-sm btn-primary">
-                    <i class="fas fa-chart-line"></i>
-                    <span>مانیتور زنده ترافیک</span>
+                    <i class="fas fa-chart-area"></i> چارت زنده
                 </a>
 
                 <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='on') }}" class="m-0">
-                    <button type="submit" class="btn btn-sm btn-outline-primary" title="روشن کردن سرور">
-                        <i class="fas fa-play"></i> روشن
-                    </button>
+                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-play"></i> روشن</button>
                 </form>
 
-                <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='reboot') }}" class="m-0" onsubmit="return confirm('آیا از ریبوت کردن سرور {{ srv_name }} مطمئن هستید؟')">
-                    <button type="submit" class="btn btn-sm btn-outline-warning" title="ریبوت سرور">
-                        <i class="fas fa-rotate-right"></i> ریبوت
-                    </button>
+                <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='reboot') }}" class="m-0" onsubmit="return confirm('ریبوت سرور {{ srv_name }}؟')">
+                    <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-rotate-right"></i> ریبوت</button>
                 </form>
 
-                <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='off') }}" class="m-0" onsubmit="return confirm('آیا از خاموش کردن سرور {{ srv_name }} مطمئن هستید؟')">
-                    <button type="submit" class="btn btn-sm btn-outline-danger" title="خاموش کردن سرور">
-                        <i class="fas fa-power-off"></i> خاموش
-                    </button>
+                <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='off') }}" class="m-0" onsubmit="return confirm('خاموش کردن سرور {{ srv_name }}؟')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-power-off"></i> خاموش</button>
                 </form>
 
                 <a href="{{ url_for('user_ip_service_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-info">
-                    <i class="fas fa-network-wired"></i>
-                    <span>تغییر / خرید آی‌پی</span>
+                    <i class="fas fa-globe"></i> تغییر / خرید IP
                 </a>
 
                 {% if esxi_id and vmid %}
                 <a href="{{ url_for('snapshots_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-secondary">
-                    <i class="fas fa-camera"></i>
-                    <span>اسنپ‌شات‌ها</span>
+                    <i class="fas fa-camera"></i> اسنپ‌شات
                 </a>
                 {% endif %}
             </div>
 
-            <!-- Customer Self-Service Row: Traffic Recharge + One-Click OS Rebuild -->
+            <!-- Traffic Recharge (Receipt Upload or Wallet) & Rebuild Row -->
             <div class="row g-2 pt-2 border-top">
-                <div class="col-12 col-md-6">
-                    <form method="POST" action="{{ url_for('recharge_traffic_action', server_id=srv_id) }}" class="d-flex gap-1 align-items-center">
-                        <select name="add_amount" class="form-select form-select-sm">
-                            <option value="100">+100 GiB (۷۵,۰۰۰ تومان)</option>
-                            <option value="500">+500 GiB (۳۷۵,۰۰۰ تومان)</option>
-                            <option value="1000" selected>+1 ترابایت (۷۵۰,۰۰۰ تومان)</option>
+                <div class="col-12 col-md-7">
+                    <form method="POST" action="{{ url_for('recharge_traffic_action', server_id=srv_id) }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-1 align-items-center">
+                        <select name="add_amount" class="form-select form-select-sm" style="width: auto; flex: 1;">
+                            <option value="100">+100G (۷۵,۰۰۰ ت)</option>
+                            <option value="500">+500G (۳۷۵,۰۰۰ ت)</option>
+                            <option value="1000" selected>+1TB (۷۵۰,۰۰۰ ت)</option>
                         </select>
-                        <button type="submit" class="btn btn-sm btn-gold" style="white-space: nowrap;">
-                            <i class="fas fa-bolt"></i> شارژ ترافیک
+                        <select name="pay_method" class="form-select form-select-sm" style="width: auto;" onchange="this.form.querySelector('.rc-file-{{ srv_id }}').style.display = (this.value === 'receipt' ? 'block' : 'none');">
+                            <option value="receipt" selected>با فیش واریزی</option>
+                            <option value="wallet">از کیف پول</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="fas fa-bolt"></i> شارژ حجم
                         </button>
+                        <div class="w-100 rc-file-{{ srv_id }} mt-1">
+                            <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm" title="تصویر فیش واریزی">
+                        </div>
                     </form>
                 </div>
 
-                <div class="col-12 col-md-6">
-                    <form method="POST" action="{{ url_for('user_rebuild_action', server_id=srv_id) }}" class="d-flex gap-1 align-items-center" onsubmit="return confirm('هشدار: با ریبیلد سرور، تمام اطلاعات فعلی پاک شده و اوبونتو خام با همان آی‌پی {{ srv_ip }} نصب می‌شود. ادامه می‌دهید؟')">
-                        <input type="text" name="new_password" class="form-control form-control-sm font-mono" placeholder="رمز جدید root (اختیاری)">
+                <div class="col-12 col-md-5">
+                    <form method="POST" action="{{ url_for('user_rebuild_action', server_id=srv_id) }}" class="d-flex gap-1 align-items-center" onsubmit="return confirm('ریبیلد اوبونتو با حفظ آی‌پی {{ srv_ip }} انجام شود؟')">
+                        <input type="text" name="new_password" class="form-control form-control-sm font-mono" placeholder="رمز root جدید">
                         <button type="submit" class="btn btn-sm btn-outline-warning" style="white-space: nowrap;">
-                            <i class="fas fa-compact-disc"></i> ریبیلد اوبونتو
+                            <i class="fas fa-compact-disc"></i> ریبیلد
                         </button>
                     </form>
                 </div>
@@ -201,46 +224,61 @@
     {% endfor %}
 </div>
 {% else %}
-<div class="card p-5 text-center mb-4">
+<div class="card p-5 text-center mb-4 anim-fade-up">
     <div class="mb-3">
-        <span class="stat-icon bg-primary-subtle mx-auto" style="width: 64px; height: 64px; font-size: 1.8rem;">
-            <i class="fas fa-cubes"></i>
+        <span class="stat-icon bg-primary-subtle mx-auto" style="width: 60px; height: 60px; font-size: 1.6rem;">
+            <i class="fas fa-cube"></i>
         </span>
     </div>
-    <h3 class="fw-bold mb-2">هنوز سرور مجازی فعالی در حساب شما ثبت نشده است</h3>
-    <p class="text-muted small mb-4">همین حالا یکی از پلن‌های برنزی، نقره‌ای، طلایی یا پلاتینیوم کلود کیوب را انتخاب کنید تا به صورت خودکار ساخته و تحویل شود.</p>
-    <div>
-        <a href="{{ url_for('order_vps_page') }}" class="btn btn-gold rounded-pill px-4 py-2">
-            <i class="fas fa-rocket"></i>
-            <span>مشاهده پلن‌ها و خرید اولین سرور مجازی</span>
+    <h3 class="fw-bold mb-2" style="font-size: 1.15rem;">هنوز سروری در حساب شما فعال نیست</h3>
+    <div class="mt-3">
+        <a href="{{ url_for('order_vps_page') }}" class="btn btn-primary rounded-pill px-4">
+            <i class="fas fa-rocket"></i> سفارش اولین سرور مجازی
         </a>
     </div>
 </div>
 {% endif %}
 
-<!-- Quick Store Section Inside Customer Dashboard -->
-<div class="card p-4">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <div>
-            <h3 class="fw-bold m-0" style="font-size: 1.15rem;"><i class="fas fa-store text-gold me-1"></i> سفارش سریع سرور مجازی کلود کیوب</h3>
-            <span class="small text-muted">تحویل اتوماتیک روی زیرساخت VMware ESXi با تزریق خودکار آی‌پی</span>
-        </div>
-        <a href="{{ url_for('order_vps_page') }}" class="btn btn-sm btn-outline-primary rounded-pill">صفحه کامل سفارش</a>
+<!-- Recent Payment / Receipt Requests Status -->
+{% if my_requests %}
+<div class="card p-3 anim-fade-up delay-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-bold small"><i class="fas fa-receipt text-primary me-1"></i> آخرین درخواست‌ها و فیش‌های ارسالی</span>
+        <a href="{{ url_for('wallet_page') }}" class="small">مشاهده همه</a>
     </div>
-    <div class="row g-3">
-        {% for plan in plans %}
-        <div class="col-12 col-md-6 col-xl-3">
-            <div class="p-3 rounded d-flex flex-column h-100" style="background: rgba(0, 96, 57, 0.12); border: 1px solid var(--border-color);">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <strong class="text-main">{{ plan.name_fa }}</strong>
-                    <span class="badge bg-gold">{{ plan.cpus }}C / {{ plan.ram_gb }}G</span>
-                </div>
-                <div class="small text-muted mb-2">{{ plan.disk_gb }}GB SSD • {{ plan.traffic_gib|int }}GiB ترافیک</div>
-                <div class="fw-extrabold text-gold mb-3">{{ "{:,}".format(plan.price_toman) }} تومان</div>
-                <a href="{{ url_for('order_vps_page', plan=plan.code) }}" class="btn btn-sm btn-primary w-100 mt-auto rounded-pill">انتخاب و خرید</a>
-            </div>
-        </div>
-        {% endfor %}
+    <div class="table-responsive">
+        <table class="table small mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>سفارش</th>
+                    <th>مبلغ</th>
+                    <th>وضعیت</th>
+                    <th>توضیحات / علت رد</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in my_requests %}
+                <tr>
+                    <td class="font-mono">#{{ r.id }}</td>
+                    <td><strong>{{ r.title }}</strong></td>
+                    <td class="font-mono text-gold">{{ "{:,}".format(r.amount_toman) }} تومان</td>
+                    <td>
+                        {% if r.status == 'approved' %}
+                            <span class="badge bg-success-subtle"><i class="fas fa-check"></i> تایید و انجام شد</span>
+                        {% elif r.status == 'rejected' %}
+                            <span class="badge bg-danger-subtle"><i class="fas fa-xmark"></i> رد شده</span>
+                        {% else %}
+                            <span class="badge bg-warning-subtle"><i class="fas fa-clock"></i> منتظر تایید ادمین</span>
+                        {% endif %}
+                    </td>
+                    <td class="small text-muted">{{ r.reject_reason or r.fulfillment_note or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
+{% endif %}
+
 {% endblock %}

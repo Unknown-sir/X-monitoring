@@ -1,167 +1,144 @@
 {% extends "base.html" %}
-{% block title %}پنل مدیریت | XMonitor{% endblock %}
+{% block title %}پنل مدیریت کل | کلود کیوب{% endblock %}
 {% block content %}
-<div class="admin-dashboard">
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-        <div>
-            <h1 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
-                <i class="fas fa-chart-pie text-primary"></i>
-                نمای کلی مدیریت زیرساخت
-            </h1>
-            <p class="text-muted mb-0 small">
-                آمار سرورها، کاربران، وضعیت بانک آی‌پی و دسترسی سریع به ابزارهای ESXi
-            </p>
-        </div>
 
-        <div class="license-pill">
-            <span class="badge rounded-pill {% if is_trial %}bg-warning-subtle text-warning{% else %}bg-success-subtle text-success{% endif %}">
-                <i class="fas fa-key me-1"></i>
-                {{ "نسخه آزمایشی" if is_trial else "لایسنس فعال" }}
-            </span>
-            <span class="text-muted">•</span>
-            <span class="small">
-                مانده: <strong>{{ time_left.days }} روز و {{ time_left.hours }} ساعت</strong>
-            </span>
+{% set srv_pct = ((active_servers / total_servers) * 100)|round(0)|int if total_servers > 0 else 0 %}
+{% set srv_off = (251 - (251 * srv_pct / 100))|round(1) %}
+{% set used_ips = total_ips - free_ips %}
+{% set ip_pct = ((used_ips / total_ips) * 100)|round(0)|int if total_ips > 0 else 0 %}
+{% set ip_off = (251 - (251 * ip_pct / 100))|round(1) %}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-chart-pie text-primary me-1"></i> مرکز فرماندهی و آمار کلود کیوب
+        </h1>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('admin_payments_page') }}" class="btn btn-sm btn-primary rounded-pill px-3">
+            <i class="fas fa-receipt"></i> فیش‌های واریزی ({{ pending_payments|default(0) }} منتظر)
+        </a>
+        <a href="{{ url_for('admin_settings_page') }}" class="btn btn-sm btn-outline-info rounded-pill px-3">
+            <i class="fas fa-sliders"></i> تنظیمات کارت و پروکسی
+        </a>
+        <a href="{{ url_for('create_vm_page') }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+            <i class="fas fa-plus"></i> ساخت سرور در ESXi
+        </a>
+    </div>
+</div>
+
+<!-- Top KPI Cards -->
+<div class="row g-3 mb-4 anim-fade-up delay-1">
+    <div class="col-12 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">سرورهای فعال / کل</div>
+                <div class="fw-extrabold font-mono mt-1" style="font-size: 1.45rem;">{{ active_servers }} <span class="small text-muted">/ {{ total_servers }}</span></div>
+            </div>
+            <span class="stat-icon bg-primary-subtle"><i class="fas fa-server"></i></span>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">آی‌پی‌های آزاد بانک</div>
+                <div class="fw-extrabold font-mono text-info mt-1" style="font-size: 1.45rem;">{{ free_ips }} <span class="small text-muted">/ {{ total_ips }}</span></div>
+            </div>
+            <span class="stat-icon bg-info-subtle"><i class="fas fa-sitemap"></i></span>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">فیش‌های منتظر تایید</div>
+                <div class="fw-extrabold font-mono text-warning mt-1" style="font-size: 1.45rem;">{{ pending_payments|default(0) }}</div>
+            </div>
+            <a href="{{ url_for('admin_payments_page') }}" class="stat-icon bg-warning-subtle"><i class="fas fa-receipt"></i></a>
+        </div>
+    </div>
+    <div class="col-12 col-md-3">
+        <div class="card stat-card">
+            <div>
+                <div class="small text-muted">مجموع فروش تاییدشده</div>
+                <div class="fw-extrabold font-mono text-success mt-1" style="font-size: 1.25rem;">{{ "{:,}".format(approved_revenue|default(0)) }} <span class="small text-muted">ت</span></div>
+            </div>
+            <span class="stat-icon bg-success-subtle"><i class="fas fa-coins"></i></span>
+        </div>
+    </div>
+</div>
+
+<!-- Visual Charts Row -->
+<div class="row g-4 mb-4 anim-fade-up delay-2">
+    <div class="col-12 col-md-4">
+        <div class="card p-4 h-100 d-flex flex-row align-items-center justify-content-between">
+            <div>
+                <h4 class="fw-bold mb-1" style="font-size: 1rem;">وضعیت ماشین‌های مجازی</h4>
+                <div class="small text-muted mb-2">{{ active_servers }} روشن از {{ total_servers }} سرور</div>
+                <span class="badge bg-success-subtle font-mono">{{ srv_pct }}% Active</span>
+            </div>
+            <svg width="96" height="96" viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(139,92,246,0.15)" stroke-width="12"></circle>
+                <circle cx="50" cy="50" r="40" fill="none" stroke="#8B5CF6" stroke-width="12" stroke-dasharray="251" stroke-dashoffset="{{ srv_off }}" stroke-linecap="round"></circle>
+            </svg>
         </div>
     </div>
 
-    <!-- Bento KPI Grid -->
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-xl-3">
-            <div class="card stat-card h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="small text-muted fw-semibold">کل سرورها</span>
-                        <span class="stat-icon bg-primary-subtle text-primary"><i class="fas fa-server"></i></span>
-                    </div>
-                    <div class="fs-2 fw-bold">{{ total_servers }}</div>
-                    <div class="small text-muted mt-1">{{ active_servers }} سرور فعال در حال مانیتور</div>
-                </div>
+    <div class="col-12 col-md-4">
+        <div class="card p-4 h-100 d-flex flex-row align-items-center justify-content-between">
+            <div>
+                <h4 class="fw-bold mb-1" style="font-size: 1rem;">ظرفیت بانک آی‌پی (IP Pool)</h4>
+                <div class="small text-muted mb-2">{{ used_ips }} اختصاص‌یافته • {{ free_ips }} آزاد</div>
+                <span class="badge bg-info-subtle font-mono">{{ ip_pct }}% Allocated</span>
             </div>
-        </div>
-
-        <div class="col-6 col-xl-3">
-            <div class="card stat-card h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="small text-muted fw-semibold">آی‌پی‌های آزاد (IP Pool)</span>
-                        <span class="stat-icon bg-success-subtle text-success"><i class="fas fa-sitemap"></i></span>
-                    </div>
-                    <div class="fs-2 fw-bold text-success">{{ free_ips }}</div>
-                    <div class="small text-muted mt-1">از مجموع {{ total_ips }} آی‌پی ثبت‌شده</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-6 col-xl-3">
-            <div class="card stat-card h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="small text-muted fw-semibold">کاربران پنل</span>
-                        <span class="stat-icon bg-info-subtle text-info"><i class="fas fa-users"></i></span>
-                    </div>
-                    <div class="fs-2 fw-bold">{{ total_users }}</div>
-                    <div class="small text-muted mt-1">{{ active_users }} حساب کاربری فعال</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-6 col-xl-3">
-            <div class="card stat-card h-100">
-                <div class="card-body">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <span class="small text-muted fw-semibold">وضعیت اتوماسیون</span>
-                        <span class="stat-icon bg-warning-subtle text-warning"><i class="fas fa-bolt"></i></span>
-                    </div>
-                    <div class="fs-5 fw-bold text-info mt-2">ESXi + Cloud-Init</div>
-                    <div class="small text-muted mt-1">تزریق خودکار IP و Netplan فعال</div>
-                </div>
-            </div>
+            <svg width="96" height="96" viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(56,189,248,0.15)" stroke-width="12"></circle>
+                <circle cx="50" cy="50" r="40" fill="none" stroke="#38BDF8" stroke-width="12" stroke-dasharray="251" stroke-dashoffset="{{ ip_off }}" stroke-linecap="round"></circle>
+            </svg>
         </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="card mb-4">
-        <div class="card-body p-4">
-            <h2 class="h6 fw-bold mb-3 d-flex align-items-center gap-2">
-                <i class="fas fa-rocket text-primary"></i>
-                دسترسی سریع مدیریتی
-            </h2>
-            <div class="row g-3">
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('create_vm_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-primary-subtle text-primary"><i class="fas fa-plus-circle"></i></span>
-                        <span class="btn-text">
-                            <span class="title">ساخت سرور در ESXi</span>
-                            <span class="subtitle">کلون + تزریق خودکار IP</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('ip_pool_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-success-subtle text-success"><i class="fas fa-sitemap"></i></span>
-                        <span class="btn-text">
-                            <span class="title">بانک آی‌پی (IP Pool)</span>
-                            <span class="subtitle">ثبت رنج آی‌پی و گیت‌وی</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('esxi_hosts_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-info-subtle text-info"><i class="fas fa-network-wired"></i></span>
-                        <span class="btn-text">
-                            <span class="title">هاست‌های ESXi</span>
-                            <span class="subtitle">مدیریت نودها و Golden Image</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('manage_servers') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-warning-subtle text-warning"><i class="fas fa-list-check"></i></span>
-                        <span class="btn-text">
-                            <span class="title">مدیریت سرورها</span>
-                            <span class="subtitle">ریبیلد، تغییر IP و اسنپ‌شات</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('add_user_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-primary-subtle text-primary"><i class="fas fa-user-plus"></i></span>
-                        <span class="btn-text">
-                            <span class="title">افزودن کاربر</span>
-                            <span class="subtitle">ایجاد دسترسی مشتری جدید</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('manage_users') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-secondary-subtle text-light"><i class="fas fa-users-gear"></i></span>
-                        <span class="btn-text">
-                            <span class="title">مدیریت کاربران</span>
-                            <span class="subtitle">ویرایش نقش و وضعیت دسترسی</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('assign_server_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-info-subtle text-info"><i class="fas fa-link"></i></span>
-                        <span class="btn-text">
-                            <span class="title">اتصال سرور به کاربر</span>
-                            <span class="subtitle">تخصیص دسترسی به مشتری</span>
-                        </span>
-                    </a>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-                    <a href="{{ url_for('events_page') }}" class="btn-action w-100">
-                        <span class="btn-icon bg-danger-subtle text-danger"><i class="fas fa-bell"></i></span>
-                        <span class="btn-text">
-                            <span class="title">رویدادها و لاگ‌ها</span>
-                            <span class="subtitle">مشاهده هشدارهای ترافیک و سیستم</span>
-                        </span>
-                    </a>
-                </div>
+    <div class="col-12 col-md-4">
+        <div class="card p-4 h-100 d-flex flex-column justify-content-between">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="fw-bold m-0" style="font-size: 1rem;">کل ترافیک مصرفی سرورها</h4>
+                <i class="fas fa-wave-square text-primary"></i>
+            </div>
+            <div class="fw-extrabold font-mono text-gold my-2" style="font-size: 1.4rem;">
+                {{ total_traffic_used|default(0) }} <span class="small text-muted">/ {{ total_traffic_limit|default(0) }} GiB</span>
+            </div>
+            <div class="progress">
+                {% set adm_tpct = ((total_traffic_used / total_traffic_limit) * 100)|round(1) if total_traffic_limit and total_traffic_limit > 0 else 25 %}
+                <div class="progress-bar" style="width: {{ [adm_tpct, 100]|min }}%;"></div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Quick Shortcuts Grid -->
+<div class="row g-3 anim-fade-up delay-3">
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('admin_payments_page') }}" class="card p-3 d-flex flex-row align-items-center gap-3">
+            <span class="stat-icon bg-warning-subtle"><i class="fas fa-receipt"></i></span>
+            <span class="fw-bold small">تایید فیش‌ها</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('admin_settings_page') }}" class="card p-3 d-flex flex-row align-items-center gap-3">
+            <span class="stat-icon bg-info-subtle"><i class="fas fa-sliders"></i></span>
+            <span class="fw-bold small">تنظیمات بات و کارت</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('manage_servers') }}" class="card p-3 d-flex flex-row align-items-center gap-3">
+            <span class="stat-icon bg-primary-subtle"><i class="fas fa-server"></i></span>
+            <span class="fw-bold small">مدیریت سرورها</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('ip_pool_page') }}" class="card p-3 d-flex flex-row align-items-center gap-3">
+            <span class="stat-icon bg-success-subtle"><i class="fas fa-sitemap"></i></span>
+            <span class="fw-bold small">بانک آی‌پی</span>
+        </a>
     </div>
 </div>
 {% endblock %}

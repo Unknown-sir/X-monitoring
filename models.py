@@ -103,3 +103,32 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     notified: Mapped[bool] = mapped_column(Boolean, default=False)
     server: Mapped["Server"] = relationship(back_populates="events")
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(String(64), nullable=True)
+
+
+class PaymentRequest(Base):
+    __tablename__ = "payment_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    username = Column(String(150), nullable=False)
+    request_type = Column(String(50), nullable=False)
+    title = Column(String(255), nullable=False)
+    amount_toman = Column(Integer, nullable=False, default=0)
+    receipt_filename = Column(String(255), nullable=False)
+    tracking_note = Column(String(255), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    status = Column(String(32), nullable=False, default="pending")
+    reject_reason = Column(Text, nullable=True)
+    decided_by = Column(String(100), nullable=True)
+    decided_at = Column(String(64), nullable=True)
+    telegram_msg_id = Column(Integer, nullable=True)
+    fulfillment_note = Column(Text, nullable=True)
+    created_at = Column(String(64), nullable=False)
