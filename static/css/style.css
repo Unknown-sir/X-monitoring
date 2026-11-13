@@ -998,3 +998,122 @@ body.light-mode .cc-plan-card {
 .cc-perm-item.client-mod {
     border-right: 3px solid var(--info);
 }
+
+
+/* ==========================================================================
+   Cloud Cube v7.0 — Ultra-Luxury Web Animations, Aurora Mesh & Glass 2.0
+   ========================================================================== */
+
+@keyframes auroraFloat {
+    0%, 100% {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+        transform: translate3d(-25px, 18px, 0) scale(1.08);
+    }
+}
+
+@keyframes sheenSweep {
+    0% {
+        left: -120%;
+    }
+    35%, 100% {
+        left: 140%;
+    }
+}
+
+@keyframes borderGlowPulse {
+    0%, 100% {
+        border-color: rgba(139, 92, 246, 0.28);
+        box-shadow: 0 16px 40px -10px rgba(6, 6, 20, 0.7), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+    }
+    50% {
+        border-color: rgba(167, 139, 250, 0.52);
+        box-shadow: 0 18px 44px -8px rgba(139, 92, 246, 0.26), inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+    }
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    top: -120px;
+    right: -120px;
+    width: 460px;
+    height: 460px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.20) 0%, rgba(109, 40, 217, 0.06) 50%, transparent 72%);
+    filter: blur(45px);
+    pointer-events: none;
+    z-index: 0;
+    animation: auroraFloat 11s ease-in-out infinite;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    bottom: -140px;
+    left: -100px;
+    width: 440px;
+    height: 440px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.13) 0%, rgba(167, 139, 250, 0.06) 50%, transparent 72%);
+    filter: blur(50px);
+    pointer-events: none;
+    z-index: 0;
+    animation: auroraFloat 14s ease-in-out infinite reverse;
+}
+
+.xm-layout, .cc-navbar, .cc-hero, section, .auth-wrapper {
+    position: relative;
+    z-index: 1;
+}
+
+.card, .cc-server-card, .cc-plan-card {
+    background: linear-gradient(155deg, rgba(28, 28, 64, 0.86) 0%, rgba(17, 17, 41, 0.92) 100%);
+    box-shadow: 0 16px 40px -10px rgba(5, 5, 18, 0.72), inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
+    transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.32s ease, box-shadow 0.32s ease;
+}
+
+body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan-card {
+    background: linear-gradient(155deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 244, 255, 0.98) 100%);
+    box-shadow: 0 12px 32px -8px rgba(139, 92, 246, 0.14), inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+.card:hover, .cc-server-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(167, 139, 250, 0.55);
+    box-shadow: 0 22px 48px -12px rgba(139, 92, 246, 0.30), inset 0 1px 0 0 rgba(255, 255, 255, 0.20);
+}
+
+.btn-primary, .btn-gold {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 50%, #7C3AED 100%);
+    box-shadow: 0 8px 24px -4px rgba(139, 92, 246, 0.48), inset 0 1px 0 0 rgba(255, 255, 255, 0.28);
+}
+
+.btn-primary::after, .btn-gold::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -120%;
+    width: 65%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.26), transparent);
+    transform: skewX(-24deg);
+    animation: sheenSweep 4.5s infinite;
+    pointer-events: none;
+}
+
+.xm-logo-badge {
+    background: linear-gradient(135deg, #9333EA 0%, #8B5CF6 50%, #38BDF8 100%);
+    box-shadow: 0 0 26px rgba(139, 92, 246, 0.55);
+}
+
+.cc-license-key-box {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.20) 0%, rgba(56, 189, 248, 0.10) 100%);
+    border: 1px dashed rgba(167, 139, 250, 0.65);
+    border-radius: 16px;
+    padding: 18px 22px;
+    animation: borderGlowPulse 3s infinite;
+}

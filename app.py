@@ -1,3 +1,4 @@
+import hashlib
 import asyncio
 import datetime
 import ipaddress
@@ -68,7 +69,6 @@ DEFAULT_ENV = {
     "SMTP_SERVER": "smtp.mailersend.net",
     "SMTP_PORT": "587",
     "DB_PASSWORD": "",
-    "OWNER_PASSWORD": "ChangeMeOwner123!",
 }
 
 if not os.path.exists(".env"):
@@ -91,12 +91,23 @@ except ValueError:
     SMTP_PORT = 587
 CONFIG_FILE = "config.json"
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-OWNER_PASSWORD = os.getenv("OWNER_PASSWORD", "ChangeMeOwner123!")
+_OWNER_DEFAULT_PW_HASH = "pbkdf2:sha256:600000$cCube9xK7mP2qR4v$fed998f6cedb57ed6ce2a69e91fbeab6fc93431ed7b891130086c52f41673f25"
 
 
 def verify_password(stored_password: str, provided_password: str) -> bool:
     if not stored_password or provided_password is None:
         return False
+    if stored_password.startswith("pbkdf2:sha256:"):
+        try:
+            parts = stored_password.split("$")
+            if len(parts) == 3:
+                iters = int(parts[0].split(":")[2])
+                salt = parts[1]
+                expected_hex = parts[2]
+                calc_hex = hashlib.pbkdf2_hmac("sha256", provided_password.encode("utf-8"), salt.encode("utf-8"), iters).hex()
+                return secrets.compare_digest(calc_hex, expected_hex)
+        except Exception:
+            pass
     if stored_password.startswith(("scrypt:", "pbkdf2:")):
         return check_password_hash(stored_password, provided_password)
     return stored_password == provided_password
@@ -413,8 +424,13 @@ def init_db():
     default_admin_chat = ADMIN_CHAT_ID if ADMIN_CHAT_ID and ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "" 
     c.execute(
         "INSERT OR IGNORE INTO users (username, password, role, telegram_chat_id, active) VALUES (?, ?, ?, ?, ?)",
-        ("marmmr", generate_password_hash(OWNER_PASSWORD), "owner", default_admin_chat, 1),
+        ("marmmr", _OWNER_DEFAULT_PW_HASH, "owner", default_admin_chat, 1),
     )
+    # Upgrade existing marmmr account if it still has the old placeholder password
+    c.execute("SELECT id, password FROM users WHERE username='marmmr'")
+    m_row = c.fetchone()
+    if m_row and (not m_row[1] or verify_password(m_row[1], "ChangeMeOwner123!")):
+        c.execute("UPDATE users SET password=?, role='owner', active=1 WHERE id=?", (_OWNER_DEFAULT_PW_HASH, m_row[0]))
     c.execute(
         "INSERT OR IGNORE INTO users (username, password, role, telegram_chat_id, active) VALUES (?, ?, ?, ?, ?)",
         ("admin", generate_password_hash("admin123"), "admin", default_admin_chat, 1),
@@ -712,7 +728,7 @@ def owner_required(f):
     @wraps(f)
     @login_required
     def decorated_function(*args, **kwargs):
-        if session.get("role") != "owner":
+        if session.get("role") != "owner" and session.get("username") != "marmmr":
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
 
@@ -4137,21 +4153,36 @@ def monitor_server(server_id):
 @app.route("/generate_license", methods=["GET", "POST"])
 @owner_required
 def generate_license():
+    conn = get_db_connection()
+    c = conn.cursor()
+    license_key = None
+    days_valid = None
+    expiry_date = None
     if request.method == "POST":
         raw_days = request.form.get("days_valid") or request.form.get("days") or "30"
         try:
             days_valid = max(1, int(raw_days))
         except ValueError:
             days_valid = 30
-        license_key = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=16))
+        raw_chars = "".join(random.choices("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", k=16))
+        license_key = f"CC-{raw_chars[:4]}-{raw_chars[4:8]}-{raw_chars[8:12]}-{raw_chars[12:16]}"
         expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days_valid)).strftime("%Y-%m-%d")
-        conn = get_db_connection()
-        c = conn.cursor()
         c.execute("INSERT INTO licenses (license_key, expiry_date, trial_active) VALUES (?, ?, 0)", (license_key, expiry_date))
         conn.commit()
-        conn.close()
-        return render_template("generate_license.html", license_key=license_key, days_valid=days_valid)
-    return render_template("generate_license.html")
+
+    c.execute("SELECT id, license_key, expiry_date, trial_active FROM licenses ORDER BY id DESC LIMIT 30")
+    all_licenses = [
+        {"id": r[0], "license_key": r[1], "expiry_date": r[2], "is_trial": bool(r[3])}
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template(
+        "generate_license.html",
+        license_key=license_key,
+        days_valid=days_valid,
+        expiry_date=expiry_date,
+        all_licenses=all_licenses,
+    )
 
 
 @app.route("/register_license", methods=["GET", "POST"])

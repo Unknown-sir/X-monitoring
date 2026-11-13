@@ -1,46 +1,112 @@
 {% extends "base.html" %}
-{% block title %}تولید لایسنس | XMonitor{% endblock %}
+{% block title %}تولید لایسنس اختصاصی (Owner) | کلود کیوب{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-6">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
-                    <i class="fas fa-wand-magic-sparkles text-primary"></i>
-                    تولید لایسنس جدید
-                </h2>
-                <p class="text-muted small mb-0">مشخص کردن مدت اعتبار برای صدور کلید لایسنس (ویژه Owner)</p>
-            </div>
-            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                <i class="fas fa-arrow-right me-1"></i> پنل مدیریت
-            </a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div class="d-flex align-items-center gap-3">
+        <span class="xm-logo-badge"><i class="fas fa-wand-magic-sparkles"></i></span>
+        <div>
+            <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">مرکز تولید لایسنس اختصاصی (مخصوص Owner)</h1>
+            <span class="small text-muted">ساخت کلید لایسنس زمان‌دار برای فعال‌سازی و تمدید پنل کلود کیوب</span>
         </div>
+    </div>
+    <a href="{{ url_for('register_license') }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+        <i class="fas fa-key"></i> صفحه ثبت لایسنس روی پنل
+    </a>
+</div>
 
-        <div class="card mb-3">
-            <div class="card-body p-4">
-                <form method="POST" class="d-flex flex-column gap-3">
-                    <div>
-                        <label for="days_valid" class="form-label">مدت اعتبار (تعداد روز)</label>
-                        <input type="number" class="form-control font-mono" id="days_valid" name="days_valid" min="1" value="30" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100 rounded-pill py-2">
-                        <i class="fas fa-plus me-1"></i> تولید کلید لایسنس
+<div class="row g-4 anim-fade-up">
+    <!-- Left Column: License Generator Form -->
+    <div class="col-12 col-xl-5">
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.1rem;">
+                <i class="fas fa-bolt text-gold me-1"></i> ساخت کلید لایسنس جدید
+            </h3>
+
+            {% if license_key %}
+            <div class="cc-license-key-box mb-4">
+                <div class="d-flex justify-content-between align-items-center small text-muted mb-1">
+                    <span>کلید لایسنس تولیدشده ({{ days_valid }} روزه):</span>
+                    <span class="font-mono text-gold">انقضا: {{ expiry_date }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-2 my-2">
+                    <div class="font-mono fw-extrabold text-main" style="font-size: 1.25rem; letter-spacing: 1.5px;">{{ license_key }}</div>
+                    <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" onclick="copyText('{{ license_key }}')">
+                        <i class="fas fa-copy"></i> کپی کلید
                     </button>
-                </form>
-            </div>
-        </div>
-
-        {% if license_key %}
-        <div class="card border-success">
-            <div class="card-body p-4 text-center">
-                <div class="text-success mb-2"><i class="fas fa-check-circle fa-2x"></i></div>
-                <p class="small text-muted mb-1">کلید لایسنس با اعتبار {{ days_valid }} روز ساخته شد:</p>
-                <div class="p-2 rounded-3 font-mono fw-bold fs-5 my-2" style="background: var(--bg-input); letter-spacing: 0.08em;">
-                    {{ license_key }}
                 </div>
             </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('generate_license') }}" class="d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label">انتخاب سریع مدت اعتبار لایسنس:</label>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('licDays').value='7'">۷ روزه</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('licDays').value='30'">۱ ماهه (۳۰ روز)</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('licDays').value='90'">۳ ماهه (۹۰ روز)</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('licDays').value='365'">۱ ساله (۳۶۵ روز)</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('licDays').value='3650'">دائمی (۱۰ سال)</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="form-label">تعداد روز اعتبار لایسنس</label>
+                    <input type="number" id="licDays" name="days_valid" value="30" min="1" max="36500" class="form-control font-mono" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 rounded-pill mt-2">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span>تولید آنی کلید لایسنس جدید</span>
+                </button>
+            </form>
         </div>
-        {% endif %}
+    </div>
+
+    <!-- Right Column: Generated Licenses List -->
+    <div class="col-12 col-xl-7">
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.1rem;">
+                <i class="fas fa-list-check text-primary me-1"></i> لیست کلیدهای لایسنس صادرشده در سیستم
+            </h3>
+            {% if all_licenses %}
+            <div class="table-responsive">
+                <table class="table small mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>کلید لایسنس (License Key)</th>
+                            <th>نوع</th>
+                            <th>تاریخ انقضا</th>
+                            <th>کپی</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lic in all_licenses %}
+                        <tr>
+                            <td class="font-mono">#{{ lic.id }}</td>
+                            <td class="font-mono fw-bold text-gold">{{ lic.license_key }}</td>
+                            <td>
+                                {% if lic.is_trial %}
+                                    <span class="badge bg-warning-subtle">آزمایشی</span>
+                                {% else %}
+                                    <span class="badge bg-success-subtle">اصلی (پریمیوم)</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-mono">{{ lic.expiry_date }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" onclick="copyText('{{ lic.license_key }}')">
+                                    <i class="fas fa-copy"></i> کپی
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center text-muted p-5">هنوز کلید لایسنسی تولید نشده است.</div>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endblock %}

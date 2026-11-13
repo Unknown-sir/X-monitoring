@@ -1,33 +1,33 @@
 {% extends "base.html" %}
-{% block title %}ثبت لایسنس | XMonitor{% endblock %}
+{% block title %}ثبت و فعال‌سازی لایسنس | کلود کیوب{% endblock %}
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-6">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="h4 fw-bold mb-1 d-flex align-items-center gap-2">
-                    <i class="fas fa-key text-primary"></i>
-                    ثبت و فعال‌سازی لایسنس
-                </h2>
-                <p class="text-muted small mb-0">کلید لایسنس ۱۶ رقمی دریافتی را برای تمدید پنل وارد کنید</p>
-            </div>
-            <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                <i class="fas fa-arrow-right me-1"></i> پنل مدیریت
-            </a>
-        </div>
-
-        <div class="card">
-            <div class="card-body p-4">
-                <form method="POST" class="d-flex flex-column gap-3">
+<div class="row justify-content-center anim-fade-up">
+    <div class="col-12 col-xl-6">
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-3 border-bottom">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="xm-logo-badge"><i class="fas fa-key"></i></span>
                     <div>
-                        <label class="form-label">کلید لایسنس</label>
-                        <input type="text" name="license_key" class="form-control font-mono text-center" placeholder="XXXX-XXXX-XXXX-XXXX" required>
+                        <h1 class="fw-extrabold m-0" style="font-size: 1.25rem;">ثبت و تمدید لایسنس پنل</h1>
+                        <span class="small text-muted">وارد کردن کلید لایسنس جهت فعال‌سازی کامل امکانات</span>
                     </div>
-                    <button type="submit" class="btn btn-success w-100 rounded-pill py-2">
-                        <i class="fas fa-check-circle me-1"></i> ثبت و فعال‌سازی
-                    </button>
-                </form>
+                </div>
+                {% if session.get('role') == 'owner' or session.get('username') == 'marmmr' %}
+                <a href="{{ url_for('generate_license') }}" class="btn btn-sm btn-primary rounded-pill">
+                    <i class="fas fa-wand-magic-sparkles"></i> تولید لایسنس جدید (Owner)
+                </a>
+                {% endif %}
             </div>
+
+            <form method="POST" action="{{ url_for('register_license') }}" class="d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label">کلید لایسنس (License Key)</label>
+                    <input type="text" name="license_key" class="form-control font-mono text-center" placeholder="CC-XXXX-XXXX-XXXX-XXXX" required autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 py-2 rounded-pill">
+                    <i class="fas fa-check-circle"></i> ثبت و فعال‌سازی لایسنس
+                </button>
+            </form>
         </div>
     </div>
 </div>
