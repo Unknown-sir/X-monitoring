@@ -20,7 +20,7 @@
 {% endif %}
 
 <!-- Collapsible Outbound Ticket Composer (Admin / Sales -> Customer) -->
-<div id="newAdminTicketBox" class="card p-4 mb-4" style="display: none; border-color: var(--primary); box-shadow: var(--glow-violet);">
+<div id="newAdminTicketBox" class="card p-4 mb-4" style="display: block; border-color: var(--primary); box-shadow: var(--glow-violet);">
     <h3 class="fw-bold mb-3" style="font-size: 1.05rem;"><i class="fas fa-envelope-open-text text-gold me-1"></i> ایجاد و ارسال تیکت مستقیم به مشتری (از طرف پشتیبانی / فروش / مالی)</h3>
     <form method="POST" action="{{ url_for('admin_tickets_page') }}">
         <input type="hidden" name="action" value="create_to_user">

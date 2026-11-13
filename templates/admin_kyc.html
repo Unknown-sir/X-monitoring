@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}مدیریت احراز هویت مشتریان (KYC) | کلود کیوب{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            <i class="fas fa-id-card-clip text-primary me-1"></i> مدیریت احراز هویت مشتریان (KYC)
+        </h1>
+        <span class="small text-muted">تعیین اجباری یا اختیاری بودن احراز هویت (به صورت سراسری یا تکی برای هر مشتری) و بررسی کد ملی و شماره همراه</span>
+    </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ message }}</div>
+{% endif %}
+{% if error_msg %}
+<div class="alert alert-danger"><i class="fas fa-triangle-exclamation me-1"></i> {{ error_msg }}</div>
+{% endif %}
+
+<!-- Global KYC Policy Control Card -->
+<div class="card p-4 mb-4 anim-fade-up" style="border-color: var(--primary); box-shadow: var(--glow-violet);">
+    <form method="POST" action="{{ url_for('admin_kyc_page') }}" class="row g-3 align-items-end">
+        <input type="hidden" name="action" value="update_policy">
+        <div class="col-12 col-md-5">
+            <label class="form-label fw-bold text-gold">
+                <i class="fas fa-shield-halved me-1"></i> وضعیت الزام سراسری احراز هویت برای همه مشتریان
+            </label>
+            <select name="require_kyc_global" class="form-select">
+                <option value="0" {% if settings.require_kyc_global != '1' %}selected{% endif %}>
+                    🟢 غیرفعال (احراز هویت برای ورود/خرید اجباری نیست؛ مگر برای کاربران انتخاب‌شده)
+                </option>
+                <option value="1" {% if settings.require_kyc_global == '1' %}selected{% endif %}>
+                    🔒 فعال (تمامی مشتریان باید قبل از استفاده از پنل و خرید، احراز هویت کنند)
+                </option>
+            </select>
+        </div>
+
+        <div class="col-12 col-md-5">
+            <label class="form-label fw-bold">نحوه تایید پس از ثبت کد ملی معتبر توسط مشتری</label>
+            <select name="kyc_auto_approve" class="form-select">
+                <option value="1" {% if settings.kyc_auto_approve == '1' %}selected{% endif %}>
+                    ⚡ تایید خودکار به محض صحت‌سنجی الگوریتم کد ملی و شماره موبایل
+                </option>
+                <option value="0" {% if settings.kyc_auto_approve != '1' %}selected{% endif %}>
+                    👨‍💼 نیازمند بررسی و تایید دستی توسط مدیریت در همین صفحه
+                </option>
+            </select>
+        </div>
+
+        <div class="col-12 col-md-2">
+            <button type="submit" class="btn btn-primary w-100 rounded-pill py-2">
+                <i class="fas fa-floppy-disk"></i> ذخیره سیاست
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Customers KYC Table -->
+<div class="card p-3 anim-fade-up">
+    <div class="table-responsive">
+        <table class="table small mb-0">
+            <thead>
+                <tr>
+                    <th>کاربر</th>
+                    <th>نام و نام خانوادگی</th>
+                    <th>تلفن همراه</th>
+                    <th>کد ملی (۱۰ رقمی)</th>
+                    <th>وضعیت احراز</th>
+                    <th>الزام تکی برای این کاربر</th>
+                    <th>عملیات مدیریت</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users_kyc %}
+                <tr>
+                    <td>
+                        <strong class="font-mono">{{ u.username }}</strong>
+                        <div class="text-muted font-mono" style="font-size: 0.72rem;">UID #{{ u.id }}</div>
+                    </td>
+                    <td><strong>{{ u.full_name or '—' }}</strong></td>
+                    <td class="font-mono text-info">{{ u.phone_number or '—' }}</td>
+                    <td class="font-mono text-gold fw-bold">{{ u.national_id or '—' }}</td>
+                    <td>
+                        {% if u.kyc_status == 'verified' %}
+                            <span class="badge bg-success-subtle"><i class="fas fa-check"></i> احراز شده</span>
+                        {% elif u.kyc_status == 'pending' %}
+                            <span class="badge bg-warning-subtle"><i class="fas fa-clock"></i> منتظر تایید</span>
+                        {% elif u.kyc_status == 'rejected' %}
+                            <span class="badge bg-danger-subtle">رد شده</span>
+                        {% else %}
+                            <span class="badge bg-secondary-subtle">ثبت نشده</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <form method="POST" action="{{ url_for('admin_kyc_page') }}" class="m-0">
+                            <input type="hidden" name="action" value="toggle_user_kyc">
+                            <input type="hidden" name="user_id" value="{{ u.id }}">
+                            {% if u.kyc_required %}
+                            <input type="hidden" name="kyc_required" value="0">
+                            <button type="submit" class="btn btn-sm btn-warning rounded-pill py-0 px-2" style="font-size: 0.74rem;">
+                                <i class="fas fa-lock"></i> اجباری (لغو الزام)
+                            </button>
+                            {% else %}
+                            <input type="hidden" name="kyc_required" value="1">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2" style="font-size: 0.74rem;">
+                                اختیاری (الزام به احراز)
+                            </button>
+                            {% endif %}
+                        </form>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                            {% if u.kyc_status != 'verified' %}
+                            <form method="POST" action="{{ url_for('admin_kyc_page') }}" class="m-0">
+                                <input type="hidden" name="action" value="verify_user">
+                                <input type="hidden" name="user_id" value="{{ u.id }}">
+                                <button type="submit" class="btn btn-sm btn-success py-1 px-2">
+                                    <i class="fas fa-check"></i> تایید
+                                </button>
+                            </form>
+                            {% endif %}
+
+                            <form method="POST" action="{{ url_for('admin_kyc_page') }}" class="d-flex gap-1 m-0">
+                                <input type="hidden" name="action" value="reject_user">
+                                <input type="hidden" name="user_id" value="{{ u.id }}">
+                                <input type="text" name="reject_reason" class="form-control form-control-sm" placeholder="علت رد / درخواست اصلاح..." style="width: 155px;" required>
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2">
+                                    <i class="fas fa-xmark"></i> رد
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted p-4">کاربری یافت نشد.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -19,7 +19,18 @@
     <div class="col-12 col-xl-4">
         <div class="card p-4 h-100">
             <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-plus-circle text-primary me-1"></i> ثبت تیکت جدید</h3>
-            <form method="POST" action="{{ url_for('tickets_page') }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+                        <form method="POST" action="{{ url_for('tickets_page') }}" enctype="multipart/form-data" class="d-flex flex-column gap-3">
+                {% if has_perm('tickets_reply') and all_users %}
+                <div class="p-2 rounded" style="background: rgba(139, 92, 246, 0.14); border: 1px solid var(--primary);">
+                    <label class="form-label text-gold mb-1"><i class="fas fa-user-check me-1"></i> ارسال تیکت به مشتری (ویژه ادمین، پشتیبانی و فروش)</label>
+                    <select name="target_user_id" class="form-select form-select-sm">
+                        <option value="">— ثبت برای حساب خودم —</option>
+                        {% for u in all_users %}
+                        <option value="{{ u.id }}">ارسال به مشتری: {{ u.username }} {% if u.full_name %}({{ u.full_name }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
                 <div>
                     <label class="form-label">موضوع تیکت</label>
                     <input type="text" name="subject" class="form-control" placeholder="عنوان درخواست..." required>

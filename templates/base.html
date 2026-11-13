@@ -30,7 +30,7 @@
         </a>
 
         <nav class="xm-sidebar-nav">
-            {% if has_perm('tickets_reply') or has_perm('payments_manage') or has_perm('admin_stats') or has_perm('servers_manage') or has_perm('esxi_create_vm') or has_perm('esxi_hosts') or has_perm('ip_pool') or has_perm('plans_manage') or has_perm('users_manage') or has_perm('assign_server') or has_perm('settings_manage') or has_perm('events_view') or has_perm('license_manage') %}
+            {% if has_perm('tickets_reply') or has_perm('kyc_manage') or has_perm('payments_manage') or has_perm('admin_stats') or has_perm('servers_manage') or has_perm('esxi_create_vm') or has_perm('esxi_hosts') or has_perm('ip_pool') or has_perm('plans_manage') or has_perm('users_manage') or has_perm('assign_server') or has_perm('settings_manage') or has_perm('events_view') or has_perm('license_manage') %}
             <div class="xm-nav-group">مدیریت، پشتیبانی و فروش</div>
 
             {% if has_perm('tickets_reply') %}
@@ -39,6 +39,16 @@
                 <span>پاسخگویی به تیکت‌ها</span>
                 {% if open_tickets_count and open_tickets_count > 0 %}
                 <span class="badge bg-purple ms-auto">{{ open_tickets_count }}</span>
+                {% endif %}
+            </a>
+            {% endif %}
+
+            {% if has_perm('kyc_manage') %}
+            <a href="{{ url_for('admin_kyc_page') }}" class="xm-nav-item {% if request.endpoint == 'admin_kyc_page' %}active{% endif %}">
+                <i class="fas fa-id-card-clip text-info"></i>
+                <span>احراز هویت مشتریان</span>
+                {% if pending_kyc_count and pending_kyc_count > 0 %}
+                <span class="badge bg-warning-subtle ms-auto">{{ pending_kyc_count }}</span>
                 {% endif %}
             </a>
             {% endif %}
@@ -161,6 +171,16 @@
                 <span>تیکت پشتیبانی</span>
             </a>
             {% endif %}
+
+            <a href="{{ url_for('kyc_page') }}" class="xm-nav-item {% if request.endpoint == 'kyc_page' %}active{% endif %}">
+                <i class="fas fa-id-card text-gold"></i>
+                <span>احراز هویت کاربری</span>
+                {% if user_kyc_status == 'verified' %}
+                <span class="badge bg-success-subtle ms-auto"><i class="fas fa-check"></i></span>
+                {% elif user_kyc_must %}
+                <span class="badge bg-danger-subtle ms-auto">الزامی</span>
+                {% endif %}
+            </a>
             {% endif %}
 
             <a href="{{ url_for('landing') }}" class="xm-nav-item">

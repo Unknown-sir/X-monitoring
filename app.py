@@ -336,6 +336,8 @@ def init_db():
         ("bank_card_holder", "مدیریت کلود کیوب", now_init),
         ("bank_sheba", "IR000000000000000000000000", now_init),
         ("bank_name", "بانک ملی / ملت", now_init),
+        ("require_kyc_global", "0", now_init),
+        ("kyc_auto_approve", "1", now_init),
     ]
     for sk, sv, st in default_settings:
         c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
@@ -380,6 +382,20 @@ def init_db():
             c.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL")
         except Exception:
             pass
+    for k_col, k_type in [
+        ("full_name", "TEXT DEFAULT NULL"),
+        ("phone_number", "TEXT DEFAULT NULL"),
+        ("national_id", "TEXT DEFAULT NULL"),
+        ("kyc_status", "TEXT DEFAULT 'unverified'"),  # unverified, pending, verified, rejected
+        ("kyc_required", "INTEGER DEFAULT 0"),        # 0 = optional, 1 = mandatory for this user
+        ("kyc_reject_reason", "TEXT DEFAULT NULL"),
+        ("kyc_submitted_at", "TEXT DEFAULT NULL"),
+    ]:
+        if k_col not in ucols:
+            try:
+                c.execute(f"ALTER TABLE users ADD COLUMN {k_col} {k_type}")
+            except Exception:
+                pass
 
     default_plans = [
         ("bronze", "سرویس برنزی", "Bronze VPS", 1, 2, 20, 1000, 1190000, "اقتصادی", 1),
@@ -461,6 +477,7 @@ def send_email(subject, body, to_email="admin@example.com"):
 PANEL_MODULES = [
     # Staff / Admin / Support / Sales Modules
     ("tickets_reply", "پاسخگویی و مدیریت تیکت‌ها (پشتیبانی و فروش)", "staff"),
+    ("kyc_manage", "مدیریت احراز هویت مشتریان (KYC)", "staff"),
     ("payments_manage", "بررسی و تایید/رد فیش‌های واریزی", "staff"),
     ("admin_stats", "مشاهده داشبورد آمار و چارت‌های مدیریتی", "staff"),
     ("servers_manage", "مدیریت، ویرایش و پاور تمام سرورها", "staff"),
@@ -487,12 +504,14 @@ ROLE_DEFAULT_PERMS = {
     "admin": list(ALL_MODULE_KEYS),
     "support": [
         "tickets_reply",
+        "kyc_manage",
         "servers_manage",
         "events_view",
         "client_dashboard",
     ],
     "sales": [
         "tickets_reply",
+        "kyc_manage",
         "payments_manage",
         "plans_manage",
         "assign_server",
@@ -582,6 +601,90 @@ def perm_required(perm_key: str):
             return f(*args, **kwargs)
         return wrapped
     return decorator
+
+
+# ==============================================================================
+# Iranian National ID (کد ملی) Checksum Algorithm & KYC Verification Engine
+# ==============================================================================
+PERSIAN_DIGITS_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def normalize_digits(val: str | None) -> str:
+    if not val:
+        return ""
+    return str(val).translate(PERSIAN_DIGITS_MAP).strip()
+
+
+def validate_iranian_national_id(code_raw: str | None) -> tuple[bool, str]:
+    """
+    Validates 10-digit Iranian National ID (کد ملی) using the official Modulo-11 algorithm:
+    - Exactly 10 digits
+    - Not all identical digits (e.g. 1111111111)
+    - S = sum(digit[i] * (10 - i) for i in 0..8)
+    - R = S % 11
+    - Check digit C = digit[9] must equal R (if R < 2) or (11 - R) (if R >= 2).
+    """
+    code = re.sub(r"[\s\-]", "", normalize_digits(code_raw))
+    if not re.match(r"^\d{10}$", code):
+        return False, "کد ملی باید دقیقاً ۱۰ رقم عددی باشد."
+    if len(set(code)) == 1:
+        return False, "کد ملی واردشده نامعتبر است (ارقام تکراری)."
+    digits = [int(ch) for ch in code]
+    total = sum(digits[i] * (10 - i) for i in range(9))
+    rem = total % 11
+    check_digit = digits[9]
+    valid = (check_digit == rem) if rem < 2 else (check_digit == (11 - rem))
+    if not valid:
+        return False, "کد ملی واردشده طبق الگوریتم صحت‌سنجی کد ملی معتبر نیست."
+    return True, code
+
+
+def validate_iranian_mobile(phone_raw: str | None) -> tuple[bool, str]:
+    """Normalizes and validates Iranian mobile phone number (09XXXXXXXXX)."""
+    p = re.sub(r"[\s\-()]", "", normalize_digits(phone_raw))
+    if p.startswith("+98"):
+        p = "0" + p[3:]
+    elif p.startswith("0098"):
+        p = "0" + p[4:]
+    elif p.startswith("98") and len(p) == 12:
+        p = "0" + p[2:]
+    elif p.startswith("9") and len(p) == 10:
+        p = "0" + p
+    if not re.match(r"^09\d{9}$", p):
+        return False, "شماره تلفن همراه باید ۱۱ رقم و با ۰۹ شروع شود (مثلاً 09123456789)."
+    return True, p
+
+
+def is_user_kyc_blocked(user_id: int, role: str) -> bool:
+    """
+    Returns True ONLY if:
+    1. The user is a regular customer (not owner/admin and has no staff permissions), AND
+    2. Management has enabled KYC requirement (either globally `require_kyc_global == '1'` OR specifically for this user `kyc_required == 1`), AND
+    3. The user's `kyc_status` is not `'verified'`.
+    """
+    if role in ("owner", "admin"):
+        return False
+    perms = get_user_permissions_set(user_id, role)
+    # Staff members (support/sales) are not blocked by customer KYC
+    if any(k.startswith(("tickets_", "payments_", "servers_", "admin_", "users_", "kyc_")) for k in perms):
+        return False
+
+    cfg = get_system_settings()
+    global_req = str(cfg.get("require_kyc_global", "0")) == "1"
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT kyc_status, COALESCE(kyc_required, 0) FROM users WHERE id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return False
+    kyc_status = row[0] or "unverified"
+    user_req = bool(row[1])
+    if (global_req or user_req) and kyc_status != "verified":
+        return True
+    return False
+
 
 
 def login_required(f):
@@ -702,6 +805,8 @@ def get_system_settings() -> dict:
         "bank_card_holder": "مدیریت کلود کیوب",
         "bank_sheba": "IR000000000000000000000000",
         "bank_name": "بانک ملی / ملت",
+        "require_kyc_global": "0",
+        "kyc_auto_approve": "1",
     }
     try:
         conn = get_db_connection()
@@ -1233,6 +1338,17 @@ def inject_user_wallet():
             if "payments_manage" in user_perms:
                 c.execute("SELECT COUNT(*) FROM payment_requests WHERE status='pending'")
                 pending_payments_count = c.fetchone()[0] or 0
+            pending_kyc_count = 0
+            user_kyc_status = "unverified"
+            user_kyc_must = False
+            c.execute("SELECT kyc_status, COALESCE(kyc_required, 0) FROM users WHERE id=?", (session["user_id"],))
+            kr = c.fetchone()
+            if kr:
+                user_kyc_status = kr[0] or "unverified"
+                user_kyc_must = (str(sys_cfg.get("require_kyc_global", "0")) == "1" or bool(kr[1])) and (user_kyc_status != "verified")
+            if "kyc_manage" in user_perms:
+                c.execute("SELECT COUNT(*) FROM users WHERE kyc_status='pending'")
+                pending_kyc_count = c.fetchone()[0] or 0
             if "tickets_reply" in user_perms:
                 c.execute("SELECT COUNT(*) FROM web_tickets WHERE status IN ('open', 'pending')")
                 open_tickets_count = c.fetchone()[0] or 0
@@ -1242,14 +1358,23 @@ def inject_user_wallet():
             conn.close()
         except Exception:
             open_tickets_count = 0
+            pending_kyc_count = 0
+            user_kyc_status = "unverified"
+            user_kyc_must = False
             user_perms = set()
     else:
         open_tickets_count = 0
+        pending_kyc_count = 0
+        user_kyc_status = "unverified"
+        user_kyc_must = False
         user_perms = set()
     return {
         "user_wallet": balance,
         "pending_payments_count": pending_payments_count,
         "open_tickets_count": open_tickets_count,
+        "pending_kyc_count": pending_kyc_count,
+        "user_kyc_status": user_kyc_status,
+        "user_kyc_must": user_kyc_must,
         "user_perms": user_perms,
         "has_perm": lambda k: (k in user_perms),
         "panel_modules": PANEL_MODULES,
@@ -1387,6 +1512,8 @@ def profile():
 @app.route("/dashboard")
 @perm_required("client_dashboard")
 def dashboard():
+    if is_user_kyc_blocked(session["user_id"], session.get("role", "user")):
+        return redirect(url_for("kyc_page"))
     time_left, is_trial = get_remaining_time()
     if is_license_expired() and session.get("role") != "owner":
         if session.get("role") == "admin":
@@ -1443,6 +1570,8 @@ def dashboard():
 @app.route("/wallet", methods=["GET", "POST"])
 @perm_required("client_wallet")
 def wallet_page():
+    if is_user_kyc_blocked(session["user_id"], session.get("role", "user")):
+        return redirect(url_for("kyc_page"))
     conn = get_db_connection()
     c = conn.cursor()
     msg = None
@@ -1509,6 +1638,8 @@ def wallet_page():
 @app.route("/order_vps", methods=["GET", "POST"])
 @perm_required("client_order")
 def order_vps_page():
+    if is_user_kyc_blocked(session["user_id"], session.get("role", "user")):
+        return redirect(url_for("kyc_page"))
     plans = get_active_plans()
     selected_code = request.args.get("plan", "gold")
     error_msg = None
@@ -1794,6 +1925,168 @@ PRIORITY_LABELS = {
 }
 
 
+
+# ==============================================================================
+# Customer Identity Verification (/kyc) & Admin KYC Control Center (/admin_kyc)
+# ==============================================================================
+@app.route("/kyc", methods=["GET", "POST"])
+@login_required
+def kyc_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    error_msg = None
+    success_msg = None
+
+    if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        phone_raw = request.form.get("phone_number", "").strip()
+        nid_raw = request.form.get("national_id", "").strip()
+
+        ok_nid, nid_or_err = validate_iranian_national_id(nid_raw)
+        ok_mob, mob_or_err = validate_iranian_mobile(phone_raw)
+
+        if len(full_name) < 3:
+            error_msg = "لطفاً نام و نام خانوادگی کامل خود را به صورت صحیح وارد کنید."
+        elif not ok_mob:
+            error_msg = mob_or_err
+        elif not ok_nid:
+            error_msg = nid_or_err
+        else:
+            cfg = get_system_settings()
+            auto_approve = str(cfg.get("kyc_auto_approve", "1")) == "1"
+            new_status = "verified" if auto_approve else "pending"
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
+            c.execute(
+                """UPDATE users
+                   SET full_name=?, phone_number=?, national_id=?, kyc_status=?, kyc_reject_reason=NULL, kyc_submitted_at=?
+                   WHERE id=?""",
+                (full_name, mob_or_err, nid_or_err, new_status, now_str, session["user_id"]),
+            )
+            conn.commit()
+
+            if cfg.get("admin_chat_id"):
+                st_label = "✅ تایید خودکار (کد ملی معتبر)" if new_status == "verified" else "⏳ در انتظار تایید مدیریت"
+                tg_api_request(
+                    "sendMessage",
+                    data={
+                        "chat_id": cfg["admin_chat_id"],
+                        "text": (
+                            f"🪪 *ثبت اطلاعات احراز هویت مشتری*\n\n"
+                            f"👤 *نام کاربری:* `{session.get('username')}`\n"
+                            f"📝 *نام و نام خانوادگی:* {full_name}\n"
+                            f"📱 *تلفن همراه:* `{mob_or_err}`\n"
+                            f"🔢 *کد ملی:* `{nid_or_err}`\n"
+                            f"📍 *وضعیت:* {st_label}"
+                        ),
+                        "parse_mode": "Markdown",
+                    },
+                )
+
+            if new_status == "verified":
+                success_msg = "اطلاعات هویتی و کد ملی شما با موفقیت اعتبارسنجی و تایید شد! اکنون به تمامی بخش‌های پنل دسترسی دارید."
+            else:
+                success_msg = "اطلاعات هویتی شما با موفقیت ثبت و برای تایید مدیریت ارسال شد."
+
+    c.execute(
+        "SELECT full_name, phone_number, national_id, kyc_status, COALESCE(kyc_required, 0), kyc_reject_reason, kyc_submitted_at "
+        "FROM users WHERE id=?",
+        (session["user_id"],),
+    )
+    row = c.fetchone()
+    conn.close()
+    cfg = get_system_settings()
+    kyc_info = {
+        "full_name": (row[0] or "") if row else "",
+        "phone_number": (row[1] or "") if row else "",
+        "national_id": (row[2] or "") if row else "",
+        "kyc_status": (row[3] or "unverified") if row else "unverified",
+        "kyc_required": bool(row[4]) if row else False,
+        "global_required": str(cfg.get("require_kyc_global", "0")) == "1",
+        "reject_reason": (row[5] or "") if row else "",
+        "submitted_at": (row[6] or "") if row else "",
+    }
+    return render_template("kyc.html", kyc=kyc_info, error_msg=error_msg, success_msg=success_msg)
+
+
+@app.route("/admin_kyc", methods=["GET", "POST"])
+@perm_required("kyc_manage")
+def admin_kyc_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    msg = None
+    err = None
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "update_policy":
+            req_global = "1" if request.form.get("require_kyc_global") == "1" else "0"
+            auto_app = "1" if request.form.get("kyc_auto_approve") == "1" else "0"
+            set_system_setting("require_kyc_global", req_global)
+            set_system_setting("kyc_auto_approve", auto_app)
+            msg = "سیاست احراز هویت با موفقیت به‌روزرسانی شد."
+        elif action == "toggle_user_kyc":
+            uid = int(request.form.get("user_id", 0) or 0)
+            req_val = int(request.form.get("kyc_required", 0) or 0)
+            c.execute("UPDATE users SET kyc_required=? WHERE id=?", (req_val, uid))
+            conn.commit()
+            msg = f"وضعیت الزام احراز هویت برای کاربر #{uid} تغییر یافت."
+        elif action == "verify_user":
+            uid = int(request.form.get("user_id", 0) or 0)
+            c.execute("UPDATE users SET kyc_status='verified', kyc_reject_reason=NULL WHERE id=?", (uid,))
+            conn.commit()
+            msg = f"احراز هویت کاربر #{uid} تایید شد."
+        elif action == "reject_user":
+            uid = int(request.form.get("user_id", 0) or 0)
+            reason = request.form.get("reject_reason", "اطلاعات واردشده نیازمند اصلاح است.").strip()
+            c.execute("UPDATE users SET kyc_status='rejected', kyc_reject_reason=?, kyc_required=1 WHERE id=?", (reason, uid))
+            conn.commit()
+            msg = f"احراز هویت کاربر #{uid} رد شد و کاربر ملزم به ثبت مجدد اطلاعات گردید."
+        elif action == "edit_user_kyc":
+            uid = int(request.form.get("user_id", 0) or 0)
+            full_name = request.form.get("full_name", "").strip()
+            phone_raw = request.form.get("phone_number", "").strip()
+            nid_raw = request.form.get("national_id", "").strip()
+            ok_nid, nid_clean = validate_iranian_national_id(nid_raw) if nid_raw else (True, "")
+            ok_mob, mob_clean = validate_iranian_mobile(phone_raw) if phone_raw else (True, "")
+            if not ok_nid:
+                err = f"خطا در کد ملی کاربر #{uid}: {nid_clean}"
+            elif not ok_mob:
+                err = f"خطا در شماره همراه کاربر #{uid}: {mob_clean}"
+            else:
+                c.execute(
+                    "UPDATE users SET full_name=?, phone_number=?, national_id=?, kyc_status='verified' WHERE id=?",
+                    (full_name, mob_clean, nid_clean, uid),
+                )
+                conn.commit()
+                msg = f"اطلاعات هویتی کاربر #{uid} ذخیره و تایید شد."
+
+    c.execute(
+        """SELECT id, username, role, full_name, phone_number, national_id,
+                  COALESCE(kyc_status, 'unverified'), COALESCE(kyc_required, 0), kyc_reject_reason, kyc_submitted_at
+           FROM users WHERE username != 'marmmr'
+           ORDER BY CASE WHEN kyc_status='pending' THEN 0 WHEN kyc_status='verified' THEN 1 ELSE 2 END ASC, id DESC"""
+    )
+    users_kyc = [
+        {
+            "id": r[0],
+            "username": r[1],
+            "role": r[2],
+            "full_name": r[3] or "",
+            "phone_number": r[4] or "",
+            "national_id": r[5] or "",
+            "kyc_status": r[6],
+            "kyc_required": bool(r[7]),
+            "reject_reason": r[8] or "",
+            "submitted_at": r[9] or "",
+        }
+        for r in c.fetchall()
+    ]
+    conn.close()
+    settings = get_system_settings()
+    return render_template("admin_kyc.html", users_kyc=users_kyc, settings=settings, message=msg, error_msg=err)
+
+
 @app.route("/tickets", methods=["GET", "POST"])
 @login_required
 def tickets_page():
@@ -1819,8 +2112,49 @@ def tickets_page():
             if ok_f:
                 attach_name = res_f
 
+        target_uid_raw = request.form.get("target_user_id", "").strip()
+        is_staff_sender = current_user_has_perm("tickets_reply") and target_uid_raw.isdigit() and int(target_uid_raw) != session["user_id"]
+
         if subject and message:
             now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+            if is_staff_sender:
+                target_uid = int(target_uid_raw)
+                c.execute("SELECT id, username, telegram_chat_id FROM users WHERE id=?", (target_uid,))
+                tu = c.fetchone()
+                t_uid = tu[0] if tu else target_uid
+                t_uname = tu[1] if tu else f"user_{target_uid}"
+                t_tg = tu[2] if tu else ""
+                sender_badge = request.form.get("sender_badge", DEPT_LABELS.get(department, "پشتیبانی کلود کیوب")).strip()
+                c.execute(
+                    """INSERT INTO web_tickets (
+                        user_id, username, subject, message, admin_reply, status, department, priority, server_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'answered', ?, ?, ?, ?, ?)""",
+                    (t_uid, t_uname, subject, message, message, department, priority, server_id, now_iso, now_iso),
+                )
+                tid = c.lastrowid
+                c.execute(
+                    """INSERT INTO ticket_messages (
+                        ticket_id, sender_role, sender_name, sender_badge, message, attachment_filename, created_at
+                    ) VALUES (?, 'admin', ?, ?, ?, ?, ?)""",
+                    (tid, session.get("username", "admin"), sender_badge, message, attach_name, now_iso),
+                )
+                conn.commit()
+                conn.close()
+                if t_tg:
+                    tg_api_request(
+                        "sendMessage",
+                        data={
+                            "chat_id": t_tg,
+                            "text": (
+                                f"📩 *تیکت جدید #{tid} از طرف {sender_badge}*\n\n"
+                                f"📌 *موضوع:* {subject}\n"
+                                f"💬 *پیام:* {message}"
+                            ),
+                            "parse_mode": "Markdown",
+                        },
+                    )
+                return redirect(url_for("ticket_detail_page", ticket_id=tid))
+
             c.execute(
                 """INSERT INTO web_tickets (
                     user_id, username, subject, message, status, department, priority, server_id, created_at, updated_at

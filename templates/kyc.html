@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}احراز هویت کاربری | کلود کیوب{% endblock %}
+{% block content %}
+<div class="row justify-content-center anim-fade-up">
+    <div class="col-12 col-xl-8">
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-3 border-bottom">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="xm-logo-badge"><i class="fas fa-id-card"></i></span>
+                    <div>
+                        <h1 class="fw-extrabold m-0" style="font-size: 1.3rem;">احراز هویت کاربری کلود کیوب</h1>
+                        <span class="small text-muted">ثبت نام و نام خانوادگی، شماره تلفن همراه و کد ملی معتبر</span>
+                    </div>
+                </div>
+
+                <div>
+                    {% if kyc.kyc_status == 'verified' %}
+                        <span class="badge bg-success-subtle px-3 py-2"><i class="fas fa-circle-check"></i> احراز هویت تایید شده</span>
+                    {% elif kyc.kyc_status == 'pending' %}
+                        <span class="badge bg-warning-subtle px-3 py-2"><i class="fas fa-clock"></i> در انتظار تایید مدیریت</span>
+                    {% elif kyc.kyc_status == 'rejected' %}
+                        <span class="badge bg-danger-subtle px-3 py-2"><i class="fas fa-circle-xmark"></i> رد شده — نیازمند اصلاح</span>
+                    {% else %}
+                        <span class="badge bg-primary-subtle px-3 py-2">ثبت اطلاعات هویتی</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if (kyc.global_required or kyc.kyc_required) and kyc.kyc_status != 'verified' %}
+            <div class="alert alert-info d-flex align-items-center gap-2">
+                <i class="fas fa-shield-halved text-gold" style="font-size: 1.2rem;"></i>
+                <span>بر اساس تنظیمات مدیریت، برای استفاده از خدمات پنل و ثبت سفارش لطفاً مشخصات هویتی و کد ملی معتبر خود را در فرم زیر ثبت نمایید.</span>
+            </div>
+            {% endif %}
+
+            {% if kyc.reject_reason %}
+            <div class="alert alert-danger d-flex align-items-center gap-2">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span><strong>علت رد شدن اطلاعات قبلی:</strong> {{ kyc.reject_reason }}</span>
+            </div>
+            {% endif %}
+
+            {% if error_msg %}
+            <div class="alert alert-danger d-flex align-items-center gap-2">
+                <i class="fas fa-circle-exclamation"></i>
+                <span>{{ error_msg }}</span>
+            </div>
+            {% endif %}
+
+            {% if success_msg %}
+            <div class="alert alert-success d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div><i class="fas fa-check-circle me-1"></i> {{ success_msg }}</div>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-primary rounded-pill">ورود به پنل کاربری</a>
+            </div>
+            {% endif %}
+
+            <form id="kycForm" method="POST" action="{{ url_for('kyc_page') }}" class="d-flex flex-column gap-3 mt-2" onsubmit="return validateKycFormSubmit()">
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">نام و نام خانوادگی کامل</label>
+                        <input type="text" id="kycFullName" name="full_name" value="{{ kyc.full_name }}" class="form-control" placeholder="مثلاً علی محمدی" required>
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">شماره تلفن همراه (۱۱ رقمی)</label>
+                        <input type="text" id="kycPhone" name="phone_number" value="{{ kyc.phone_number }}" class="form-control font-mono" placeholder="09123456789" maxlength="14" oninput="checkLiveMobile(this.value)" required>
+                        <div id="mobileFeedback" class="small mt-1"></div>
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label">کد ملی ۱۰ رقمی (با الگوریتم صحت‌سنجی)</label>
+                        <input type="text" id="kycNationalId" name="national_id" value="{{ kyc.national_id }}" class="form-control font-mono" placeholder="0012345678" maxlength="10" oninput="checkLiveNationalId(this.value)" required>
+                        <div id="nidFeedback" class="small mt-1"></div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pt-3 border-top mt-2">
+                    <span class="small text-muted">
+                        <i class="fas fa-lock text-primary me-1"></i>
+                        کد ملی بر اساس الگوریتم رسمی ۱۰ رقمی (رقم کنترل Modulo-11) اعتبارسنجی می‌شود.
+                    </span>
+                    <button type="submit" id="kycSubmitBtn" class="btn btn-primary rounded-pill px-5 py-2">
+                        <i class="fas fa-check-double"></i>
+                        <span>ثبت و تایید اطلاعات احراز هویت</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function toEnglishDigits(str) {
+    if (!str) return "";
+    const persian = ["۰","۱","۲","۳","۴","۵","۶","۷","۸","۹"];
+    const arabic  = ["٠","١","٢","٣","٤","٥","٦","٧","٨","٩"];
+    let res = String(str);
+    for (let i = 0; i < 10; i++) {
+        res = res.replace(new RegExp(persian[i], "g"), i).replace(new RegExp(arabic[i], "g"), i);
+    }
+    return res.replace(/[\s\-]/g, "");
+}
+
+function isValidIranianNationalId(raw) {
+    const code = toEnglishDigits(raw);
+    if (!/^\d{10}$/.test(code)) return false;
+    if (/^(\d)\1{9}$/.test(code)) return false;
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+        sum += parseInt(code.charAt(i), 10) * (10 - i);
+    }
+    const rem = sum % 11;
+    const check = parseInt(code.charAt(9), 10);
+    return (rem < 2 && check === rem) || (rem >= 2 && check === (11 - rem));
+}
+
+function checkLiveNationalId(val) {
+    const fb = document.getElementById("nidFeedback");
+    const clean = toEnglishDigits(val);
+    if (!clean) {
+        fb.innerHTML = "";
+        return false;
+    }
+    if (isValidIranianNationalId(clean)) {
+        fb.innerHTML = '<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i> کد ملی معتبر است</span>';
+        return true;
+    } else {
+        fb.innerHTML = '<span class="text-danger"><i class="fas fa-circle-xmark me-1"></i> کد ملی طبق الگوریتم صحت‌سنجی معتبر نیست</span>';
+        return false;
+    }
+}
+
+function checkLiveMobile(val) {
+    const fb = document.getElementById("mobileFeedback");
+    let clean = toEnglishDigits(val);
+    if (clean.startsWith("+98")) clean = "0" + clean.slice(3);
+    if (/^09\d{9}$/.test(clean)) {
+        fb.innerHTML = '<span class="text-success fw-bold"><i class="fas fa-check-circle me-1"></i> شماره همراه معتبر است</span>';
+        return true;
+    } else {
+        fb.innerHTML = '<span class="text-warning"><i class="fas fa-info-circle me-1"></i> فرمت صحیح: 09123456789</span>';
+        return false;
+    }
+}
+
+function validateKycFormSubmit() {
+    const nid = document.getElementById("kycNationalId").value;
+    if (!isValidIranianNationalId(nid)) {
+        checkLiveNationalId(nid);
+        alert("کد ملی واردشده معتبر نیست. لطفاً یک کد ملی ۱۰ رقمی صحیح وارد نمایید.");
+        return false;
+    }
+    return true;
+}
+</script>
+{% endblock %}
