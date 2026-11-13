@@ -181,6 +181,10 @@
                     <i class="fas fa-globe"></i> تغییر / خرید IP
                 </a>
 
+                <a href="{{ url_for('upgrade_vps_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-arrow-up-right-dots"></i> ارتقای رم / CPU / هارد
+                </a>
+
                 {% if esxi_id and vmid %}
                 <a href="{{ url_for('snapshots_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-camera"></i> اسنپ‌شات

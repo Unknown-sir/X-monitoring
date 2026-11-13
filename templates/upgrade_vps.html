@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}ارتقای منابع سرور {{ server.name }} | کلود کیوب{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div class="d-flex align-items-center gap-3">
+        <span class="xm-logo-badge"><i class="fas fa-microchip"></i></span>
+        <div>
+            <h1 class="fw-extrabold m-0" style="font-size: 1.3rem;">ارتقای سخت‌افزار سرور <span class="font-mono text-gold">{{ server.name }}</span></h1>
+            <span class="small text-muted font-mono">{{ server.ip }} • {{ server.plan_name }}</span>
+        </div>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+        <i class="fas fa-arrow-right"></i> بازگشت به سرویس‌های من
+    </a>
+</div>
+
+{% if error_msg %}
+<div class="alert alert-danger"><i class="fas fa-circle-exclamation me-1"></i> {{ error_msg }}</div>
+{% endif %}
+{% if success_msg %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ success_msg }}</div>
+{% endif %}
+
+<!-- Current Server Specs & Available Host Pool Capacity -->
+<div class="row g-3 mb-4 anim-fade-up">
+    <div class="col-12 col-md-4">
+        <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small text-muted">هسته پردازنده (CPU)</span>
+                <span class="badge bg-primary-subtle font-mono">آزاد: {{ pool.free_cpu }} Core</span>
+            </div>
+            <div class="fw-extrabold font-mono" style="font-size: 1.35rem;">فعلی: {{ server.cpus }} Core</div>
+            <div class="small text-gold mt-1">تعرفه هر هسته اضافه: {{ "{:,}".format(cpu_price) }} تومان</div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small text-muted">حافظه رم (RAM)</span>
+                <span class="badge bg-info-subtle font-mono">آزاد: {{ pool.free_ram_gb }} GB</span>
+            </div>
+            <div class="fw-extrabold font-mono" style="font-size: 1.35rem;">فعلی: {{ server.ram_gb }} GB</div>
+            <div class="small text-gold mt-1">تعرفه هر گیگابایت رم: {{ "{:,}".format(ram_price) }} تومان</div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="small text-muted">فضای هارد (SSD)</span>
+                <span class="badge bg-success-subtle font-mono">آزاد: {{ pool.free_disk_gb }} GB</span>
+            </div>
+            <div class="fw-extrabold font-mono" style="font-size: 1.35rem;">فعلی: {{ server.disk_gb }} GB</div>
+            <div class="small text-gold mt-1">تعرفه هر گیگابایت SSD: {{ "{:,}".format(disk_price) }} تومان</div>
+        </div>
+    </div>
+</div>
+
+<form method="POST" action="{{ url_for('upgrade_vps_page', server_id=server.id) }}" enctype="multipart/form-data" class="anim-fade-up">
+    <div class="row g-4">
+        <!-- Left Column: Select Additional CPU / RAM / Disk -->
+        <div class="col-12 col-xl-6">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-sliders text-primary me-1"></i> انتخاب مقدار منابع اضافه</h3>
+
+                <div class="d-flex flex-column gap-3">
+                    <div>
+                        <label class="form-label d-flex justify-content-between">
+                            <span>افزایش هسته CPU (حداکثر موجودی آزاد: {{ pool.free_cpu }} Core)</span>
+                            <strong class="font-mono text-primary" id="cpuCostLbl">0 تومان</strong>
+                        </label>
+                        <input type="number" id="addCpu" name="add_cpu" value="0" min="0" max="{{ pool.free_cpu }}" class="form-control font-mono" oninput="calcUpgradeCost()" {% if pool.free_cpu == 0 %}disabled{% endif %}>
+                    </div>
+
+                    <div>
+                        <label class="form-label d-flex justify-content-between">
+                            <span>افزایش حافظه رم RAM به گیگابایت (آزاد: {{ pool.free_ram_gb }} GB)</span>
+                            <strong class="font-mono text-primary" id="ramCostLbl">0 تومان</strong>
+                        </label>
+                        <input type="number" id="addRam" name="add_ram_gb" value="0" min="0" max="{{ pool.free_ram_gb }}" class="form-control font-mono" oninput="calcUpgradeCost()" {% if pool.free_ram_gb == 0 %}disabled{% endif %}>
+                    </div>
+
+                    <div>
+                        <label class="form-label d-flex justify-content-between">
+                            <span>افزایش فضای هارد SSD به گیگابایت (آزاد: {{ pool.free_disk_gb }} GB)</span>
+                            <strong class="font-mono text-primary" id="diskCostLbl">0 تومان</strong>
+                        </label>
+                        <input type="number" id="addDisk" name="add_disk_gb" value="0" min="0" max="{{ pool.free_disk_gb }}" step="5" class="form-control font-mono" oninput="calcUpgradeCost()" {% if pool.free_disk_gb == 0 %}disabled{% endif %}>
+                    </div>
+
+                    <div class="p-3 rounded mt-2" style="background: rgba(139, 92, 246, 0.16); border: 1px solid var(--primary);">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">مبلغ کل قابل پرداخت:</span>
+                            <span class="fw-extrabold font-mono text-gold" id="totalUpgradeLbl" style="font-size: 1.35rem;">0 تومان</span>
+                        </div>
+                        <div class="small text-muted mt-1" id="newSpecsPreview">
+                            مشخصات نهایی پس از تایید: {{ server.cpus }} Core / {{ server.ram_gb }} GB RAM / {{ server.disk_gb }} GB SSD
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Payment Method & Receipt Upload -->
+        <div class="col-12 col-xl-6">
+            <div class="card p-4 h-100">
+                <h3 class="fw-bold mb-3" style="font-size: 1.1rem;"><i class="fas fa-credit-card text-gold me-1"></i> پرداخت و ثبت درخواست ارتقا</h3>
+
+                <div class="mb-3">
+                    <label class="form-label">روش پرداخت</label>
+                    <select name="pay_method" class="form-select" onchange="document.getElementById('upgReceiptBox').style.display = (this.value === 'receipt' ? 'block' : 'none');">
+                        <option value="receipt" selected>واریز کارت به کارت و بارگذاری فیش (ارتقای خودکار پس از تایید ادمین)</option>
+                        <option value="wallet">کسر از موجودی کیف پول ({{ "{:,}".format(user_wallet|default(0)) }} تومان)</option>
+                    </select>
+                </div>
+
+                <div id="upgReceiptBox">
+                    <div class="cc-bank-card mb-3">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span>{{ sys_cfg.bank_name }}</span>
+                            <span>{{ sys_cfg.bank_card_holder }}</span>
+                        </div>
+                        <div class="font-mono fw-extrabold my-1" style="font-size: 1.25rem;">{{ sys_cfg.bank_card_number }}</div>
+                        <div class="small font-mono text-muted">{{ sys_cfg.bank_sheba }}</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">کد پیگیری واریز</label>
+                        <input type="text" name="tracking_note" class="form-control font-mono" placeholder="کد پیگیری یا ۴ رقم آخر کارت">
+                    </div>
+                    <div class="cc-upload-zone">
+                        <label class="form-label mb-1">تصویر فیش واریزی</label>
+                        <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm mt-1">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 rounded-pill mt-4">
+                    <i class="fas fa-rocket"></i>
+                    <span>ثبت درخواست ارتقای خودکار منابع</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+const CPU_P = {{ cpu_price }};
+const RAM_P = {{ ram_price }};
+const DISK_P = {{ disk_price }};
+const CUR_C = {{ server.cpus }};
+const CUR_R = {{ server.ram_gb }};
+const CUR_D = {{ server.disk_gb }};
+
+function calcUpgradeCost() {
+    const c = Math.max(0, parseInt(document.getElementById("addCpu").value || "0", 10));
+    const r = Math.max(0, parseInt(document.getElementById("addRam").value || "0", 10));
+    const d = Math.max(0, parseInt(document.getElementById("addDisk").value || "0", 10));
+    const cc = c * CPU_P;
+    const rc = r * RAM_P;
+    const dc = d * DISK_P;
+    const tot = cc + rc + dc;
+    document.getElementById("cpuCostLbl").innerText = cc.toLocaleString("en-US") + " تومان";
+    document.getElementById("ramCostLbl").innerText = rc.toLocaleString("en-US") + " تومان";
+    document.getElementById("diskCostLbl").innerText = dc.toLocaleString("en-US") + " تومان";
+    document.getElementById("totalUpgradeLbl").innerText = tot.toLocaleString("en-US") + " تومان";
+    document.getElementById("newSpecsPreview").innerText =
+        `مشخصات نهایی پس از تایید: ${CUR_C + c} Core / ${CUR_R + r} GB RAM / ${CUR_D + d} GB SSD`;
+}
+</script>
+{% endblock %}

@@ -1,19 +1,70 @@
 {% extends "base.html" %}
-{% block title %}مدیریت پلن‌ها و تعرفه‌های فروش | کلود کیوب{% endblock %}
+{% block title %}مدیریت پلن‌ها و تعرفه‌های ارتقا | کلود کیوب{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
     <div>
-        <h2 class="fw-extrabold mb-1" style="font-size: 1.35rem;"><i class="fas fa-tags text-gold me-1"></i> مدیریت پلن‌ها و تعرفه‌های فروش کلود کیوب</h2>
-        <p class="text-muted small mb-0">ویرایش مشخصات سخت‌افزاری، سقف ترافیک و قیمت پلن‌های نمایش داده شده در سایت و پنل مشتریان</p>
+        <h1 class="fw-extrabold mb-1" style="font-size: 1.35rem;"><i class="fas fa-tags text-gold me-1"></i> مدیریت پلن‌ها و تعرفه ارتقای منابع (CPU / RAM / SSD)</h1>
+        <span class="text-muted small">ویرایش پلن‌های فروشگاهی و تعیین قیمت هر واحد رم، هسته سی‌پی‌یو، هارد و سقف منابع قابل ارائه</span>
     </div>
 </div>
 
-<div class="row g-3">
+{% if upgrade_msg %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ upgrade_msg }}</div>
+{% endif %}
+
+<!-- Resource Upgrade Tariffs & Pool Capacity Card -->
+<div class="card p-4 mb-4 anim-fade-up" style="border-color: var(--primary); box-shadow: var(--glow-violet);">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
+        <h3 class="fw-bold m-0" style="font-size: 1.1rem;"><i class="fas fa-microchip text-primary me-1"></i> تعرفه‌های ارتقای منابع و موجودی کل هاست</h3>
+        <div class="d-flex flex-wrap gap-2 small font-mono">
+            <span class="badge bg-primary-subtle">CPU آزاد: {{ pool.free_cpu }} / {{ pool.max_cpu }}</span>
+            <span class="badge bg-info-subtle">RAM آزاد: {{ pool.free_ram_gb }} / {{ pool.max_ram_gb }} GB</span>
+            <span class="badge bg-success-subtle">SSD آزاد: {{ pool.free_disk_gb }} / {{ pool.max_disk_gb }} GB</span>
+        </div>
+    </div>
+    <form method="POST" action="{{ url_for('manage_plans_page') }}">
+        <input type="hidden" name="form_type" value="upgrade_tariffs">
+        <div class="row g-3">
+            <div class="col-12 col-md-4">
+                <label class="form-label">هزینه هر ۱ هسته CPU اضافه (تومان)</label>
+                <input type="number" name="upgrade_cpu_price" value="{{ settings.upgrade_cpu_price }}" class="form-control font-mono text-gold" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">هزینه هر ۱ گیگابایت RAM اضافه (تومان)</label>
+                <input type="number" name="upgrade_ram_price" value="{{ settings.upgrade_ram_price }}" class="form-control font-mono text-gold" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">هزینه هر ۱ گیگابایت هارد SSD اضافه (تومان)</label>
+                <input type="number" name="upgrade_disk_price" value="{{ settings.upgrade_disk_price }}" class="form-control font-mono text-gold" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">ظرفیت کل CPU سرور میزبان (Core)</label>
+                <input type="number" name="max_cpu_pool" value="{{ settings.max_cpu_pool }}" class="form-control font-mono" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">ظرفیت کل RAM سرور میزبان (GB)</label>
+                <input type="number" name="max_ram_gb_pool" value="{{ settings.max_ram_gb_pool }}" class="form-control font-mono" required>
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">ظرفیت کل هارد SSD میزبان (GB)</label>
+                <input type="number" name="max_disk_gb_pool" value="{{ settings.max_disk_gb_pool }}" class="form-control font-mono" required>
+            </div>
+        </div>
+        <div class="mt-3 text-end">
+            <button type="submit" class="btn btn-primary rounded-pill px-4">
+                <i class="fas fa-floppy-disk"></i> ذخیره تعرفه‌های ارتقا و ظرفیت منابع
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Base VPS Plans -->
+<div class="row g-3 anim-fade-up">
     {% for plan in plans %}
     <div class="col-12 col-md-6 col-xl-3">
         <div class="card p-3 h-100">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <span class="badge bg-gold">{{ plan.name_en }}</span>
+                <span class="badge bg-purple">{{ plan.name_en }}</span>
                 <span class="font-mono small text-muted">کد: {{ plan.code }}</span>
             </div>
             <form method="POST" action="{{ url_for('manage_plans_page') }}" class="d-flex flex-column gap-2">
@@ -24,17 +75,17 @@
                 </div>
                 <div class="row g-2">
                     <div class="col-6">
-                        <label class="form-label">تعداد هسته CPU</label>
+                        <label class="form-label">CPU</label>
                         <input type="number" name="cpus" value="{{ plan.cpus }}" class="form-control form-control-sm font-mono" required>
                     </div>
                     <div class="col-6">
-                        <label class="form-label">رم (GB)</label>
+                        <label class="form-label">RAM (GB)</label>
                         <input type="number" name="ram_gb" value="{{ plan.ram_gb }}" class="form-control form-control-sm font-mono" required>
                     </div>
                 </div>
                 <div class="row g-2">
                     <div class="col-6">
-                        <label class="form-label">دیسک SSD (GB)</label>
+                        <label class="form-label">SSD (GB)</label>
                         <input type="number" name="disk_gb" value="{{ plan.disk_gb }}" class="form-control form-control-sm font-mono" required>
                     </div>
                     <div class="col-6">
@@ -47,7 +98,7 @@
                     <input type="number" name="price_toman" value="{{ plan.price_toman }}" class="form-control form-control-sm font-mono text-gold fw-bold" required>
                 </div>
                 <button type="submit" class="btn btn-sm btn-primary rounded-pill mt-2">
-                    <i class="fas fa-save"></i> ذخیره تغییرات پلن
+                    <i class="fas fa-save"></i> ذخیره پلن
                 </button>
             </form>
         </div>

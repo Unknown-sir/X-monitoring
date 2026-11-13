@@ -349,6 +349,12 @@ def init_db():
         ("bank_name", "بانک ملی / ملت", now_init),
         ("require_kyc_global", "0", now_init),
         ("kyc_auto_approve", "1", now_init),
+        ("upgrade_cpu_price", "250000", now_init),
+        ("upgrade_ram_price", "180000", now_init),
+        ("upgrade_disk_price", "25000", now_init),
+        ("max_cpu_pool", "64", now_init),
+        ("max_ram_gb_pool", "64", now_init),
+        ("max_disk_gb_pool", "1000", now_init),
     ]
     for sk, sv, st in default_settings:
         c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
@@ -823,6 +829,12 @@ def get_system_settings() -> dict:
         "bank_name": "بانک ملی / ملت",
         "require_kyc_global": "0",
         "kyc_auto_approve": "1",
+        "upgrade_cpu_price": "250000",
+        "upgrade_ram_price": "180000",
+        "upgrade_disk_price": "25000",
+        "max_cpu_pool": "64",
+        "max_ram_gb_pool": "64",
+        "max_disk_gb_pool": "1000",
     }
     try:
         conn = get_db_connection()
@@ -1136,6 +1148,94 @@ def _execute_traffic_recharge(c, server_id: int, add_amount: float) -> str:
     return f"ترافیک سرور {srv_name} به میزان {add_amount:g} GiB افزایش یافت و پورت شبکه فعال شد."
 
 
+def get_available_hardware_pool() -> dict:
+    cfg = get_system_settings()
+    try:
+        max_cpu = max(1, int(cfg.get("max_cpu_pool", 64) or 64))
+    except ValueError:
+        max_cpu = 64
+    try:
+        max_ram_gb = max(1, int(cfg.get("max_ram_gb_pool", 64) or 64))
+    except ValueError:
+        max_ram_gb = 64
+    try:
+        max_disk_gb = max(10, int(cfg.get("max_disk_gb_pool", 1000) or 1000))
+    except ValueError:
+        max_disk_gb = 1000
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT COALESCE(SUM(cpus), 0), COALESCE(SUM(ram_mb), 0), COALESCE(SUM(disk_gb), 0) FROM servers WHERE active=1")
+    row = c.fetchone()
+    conn.close()
+
+    used_cpu = int(row[0] or 0) if row else 0
+    used_ram_gb = int(round((row[1] or 0) / 1024.0)) if row else 0
+    used_disk_gb = int(row[2] or 0) if row else 0
+
+    return {
+        "max_cpu": max_cpu,
+        "max_ram_gb": max_ram_gb,
+        "max_disk_gb": max_disk_gb,
+        "used_cpu": used_cpu,
+        "used_ram_gb": used_ram_gb,
+        "used_disk_gb": used_disk_gb,
+        "free_cpu": max(0, max_cpu - used_cpu),
+        "free_ram_gb": max(0, max_ram_gb - used_ram_gb),
+        "free_disk_gb": max(0, max_disk_gb - used_disk_gb),
+    }
+
+
+def _execute_vps_upgrade(c, server_id: int, add_cpu: int, add_ram_gb: int, add_disk_gb: int) -> str:
+    c.execute(
+        """SELECT s.id, s.name, s.vm_name, s.vmid, s.esxi_host_id, s.cpus, s.ram_mb, s.disk_gb,
+                  h.ip, h.port, h.username, h.password, h.default_datastore
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        return "سرور مورد نظر یافت نشد."
+
+    _, srv_name, vm_name, vmid, host_id, cur_cpus, cur_ram_mb, cur_disk_gb, esxi_ip, esxi_port, esxi_u, esxi_p, datastore = row
+    new_cpus = int(cur_cpus or 1) + int(add_cpu)
+    new_ram_mb = int(cur_ram_mb or 2048) + (int(add_ram_gb) * 1024)
+    new_disk_gb = int(cur_disk_gb or 20) + int(add_disk_gb)
+
+    if host_id and vmid and esxi_ip:
+        ok, msg = esxi_manager.upgrade_vm_resources_on_esxi(
+            esxi_host=esxi_ip,
+            esxi_port=esxi_port,
+            esxi_user=esxi_u,
+            esxi_password=esxi_p,
+            vmid=vmid,
+            vm_name=vm_name or srv_name,
+            datastore=datastore or "datastore1",
+            new_cpus=new_cpus,
+            new_ram_mb=new_ram_mb,
+            new_disk_gb=new_disk_gb,
+            expand_disk=(add_disk_gb > 0),
+        )
+        if not ok:
+            return f"خطا در ارتقای سخت‌افزار ESXi: {msg}"
+
+    c.execute(
+        "UPDATE servers SET cpus=?, ram_mb=?, disk_gb=? WHERE id=?",
+        (new_cpus, new_ram_mb, new_disk_gb, server_id),
+    )
+    now_iso = datetime.datetime.utcnow().isoformat()
+    c.execute(
+        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+        (
+            server_id,
+            f"ارتقای خودکار سخت‌افزار سرور {srv_name}: {new_cpus} Core CPU | {int(new_ram_mb/1024)}GB RAM | {new_disk_gb}GB SSD",
+            now_iso,
+        ),
+    )
+    invalidate_servers_cache()
+    return f"سخت‌افزار سرور {srv_name} به {new_cpus} هسته CPU، {int(new_ram_mb/1024)} گیگ رم و {new_disk_gb} گیگ SSD ارتقا یافت."
+
+
 def _execute_ip_service(c, server_id: int, op_type: str) -> str:
     c.execute(
         "SELECT id, name, ip, netmask, gateway, ipv6, ipv6_gateway, extra_ips, username, password FROM servers WHERE id=?",
@@ -1283,6 +1383,14 @@ def decide_payment_request(req_id: int, action: str, actor_label: str, reject_re
                 c,
                 int(payload.get("server_id", 0)),
                 rtype,
+            )
+        elif rtype == "upgrade_vps":
+            fulfillment_note = _execute_vps_upgrade(
+                c,
+                int(payload.get("server_id", 0)),
+                int(payload.get("add_cpu", 0)),
+                int(payload.get("add_ram_gb", 0)),
+                int(payload.get("add_disk_gb", 0)),
             )
         else:
             fulfillment_note = "تایید شد."
@@ -2103,6 +2211,122 @@ def admin_kyc_page():
     return render_template("admin_kyc.html", users_kyc=users_kyc, settings=settings, message=msg, error_msg=err)
 
 
+@app.route("/server/<int:server_id>/upgrade", methods=["GET", "POST"])
+@login_required
+def upgrade_vps_page(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+    if is_user_kyc_blocked(session["user_id"], session.get("role", "user")):
+        return redirect(url_for("kyc_page"))
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name, ip, plan_name, cpus, ram_mb, disk_gb FROM servers WHERE id=?", (server_id,))
+    s_row = c.fetchone()
+    if not s_row:
+        conn.close()
+        return "Server not found", 404
+
+    srv = {
+        "id": s_row[0],
+        "name": s_row[1],
+        "ip": s_row[2],
+        "plan_name": s_row[3] or "Cloud VPS",
+        "cpus": int(s_row[4] or 1),
+        "ram_gb": max(1, int(round((s_row[5] or 2048) / 1024.0))),
+        "disk_gb": int(s_row[6] or 20),
+    }
+
+    cfg = get_system_settings()
+    cpu_price = int(cfg.get("upgrade_cpu_price", 250000) or 250000)
+    ram_price = int(cfg.get("upgrade_ram_price", 180000) or 180000)
+    disk_price = int(cfg.get("upgrade_disk_price", 25000) or 25000)
+    pool = get_available_hardware_pool()
+
+    error_msg = None
+    success_msg = None
+
+    if request.method == "POST":
+        try:
+            add_cpu = max(0, int(request.form.get("add_cpu", 0) or 0))
+            add_ram = max(0, int(request.form.get("add_ram_gb", 0) or 0))
+            add_disk = max(0, int(request.form.get("add_disk_gb", 0) or 0))
+        except ValueError:
+            add_cpu = add_ram = add_disk = 0
+
+        pay_method = request.form.get("pay_method", "receipt").strip()
+        tracking_note = request.form.get("tracking_note", "").strip()
+        total_cost = (add_cpu * cpu_price) + (add_ram * ram_price) + (add_disk * disk_price)
+
+        if add_cpu == 0 and add_ram == 0 and add_disk == 0:
+            error_msg = "لطفاً حداقل یکی از منابع (CPU، رم یا هارد) را برای ارتقا افزایش دهید."
+        elif add_cpu > pool["free_cpu"]:
+            error_msg = f"ظرفیت آزاد CPU کافی نیست (موجودی آزاد: {pool['free_cpu']} هسته)."
+        elif add_ram > pool["free_ram_gb"]:
+            error_msg = f"ظرفیت آزاد رم (RAM) کافی نیست (موجودی آزاد: {pool['free_ram_gb']} گیگابایت)."
+        elif add_disk > pool["free_disk_gb"]:
+            error_msg = f"ظرفیت آزاد هارد (SSD) کافی نیست (موجودی آزاد: {pool['free_disk_gb']} گیگابایت)."
+        elif pay_method == "wallet":
+            if session.get("role") not in ["admin", "owner"]:
+                c.execute(
+                    "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                    (total_cost, session["user_id"], total_cost),
+                )
+                if c.rowcount == 0:
+                    error_msg = f"موجودی کیف پول شما کافی نیست ({total_cost:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
+            if not error_msg:
+                success_msg = _execute_vps_upgrade(c, server_id, add_cpu, add_ram, add_disk)
+                conn.commit()
+                srv["cpus"] += add_cpu
+                srv["ram_gb"] += add_ram
+                srv["disk_gb"] += add_disk
+                pool = get_available_hardware_pool()
+        else:
+            receipt_file = request.files.get("receipt_file")
+            ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+            if not ok_file:
+                error_msg = file_or_err
+            else:
+                now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+                parts = []
+                if add_cpu:
+                    parts.append(f"+{add_cpu} Core")
+                if add_ram:
+                    parts.append(f"+{add_ram}GB RAM")
+                if add_disk:
+                    parts.append(f"+{add_disk}GB SSD")
+                title = f"ارتقای منابع سرور {srv['name']} ({', '.join(parts)})"
+                payload = json.dumps({
+                    "server_id": server_id,
+                    "add_cpu": add_cpu,
+                    "add_ram_gb": add_ram,
+                    "add_disk_gb": add_disk,
+                })
+                c.execute(
+                    """INSERT INTO payment_requests (
+                        user_id, username, request_type, title, amount_toman, receipt_filename,
+                        tracking_note, payload_json, status, created_at
+                    ) VALUES (?, ?, 'upgrade_vps', ?, ?, ?, ?, ?, 'pending', ?)""",
+                    (session["user_id"], session.get("username", "user"), title, total_cost, file_or_err, tracking_note, payload, now_str),
+                )
+                req_id = c.lastrowid
+                conn.commit()
+                notify_admin_new_receipt(req_id, session.get("username", "user"), title, total_cost, tracking_note, file_or_err)
+                success_msg = f"درخواست ارتقای منابع و فیش واریزی (#{req_id}) ثبت شد و پس از تایید ادمین به صورت خودکار روی سرور شما اعمال می‌شود."
+
+    conn.close()
+    return render_template(
+        "upgrade_vps.html",
+        server=srv,
+        pool=pool,
+        cpu_price=cpu_price,
+        ram_price=ram_price,
+        disk_price=disk_price,
+        error_msg=error_msg,
+        success_msg=success_msg,
+    )
+
+
 @app.route("/tickets", methods=["GET", "POST"])
 @login_required
 def tickets_page():
@@ -2668,20 +2892,27 @@ def delete_web_ticket(ticket_id):
 def manage_plans_page():
     conn = get_db_connection()
     c = conn.cursor()
+    upgrade_msg = None
     if request.method == "POST":
-        plan_id = request.form.get("plan_id")
-        name_fa = request.form.get("name_fa", "").strip()
-        cpus = int(request.form.get("cpus", 1) or 1)
-        ram_gb = int(request.form.get("ram_gb", 2) or 2)
-        disk_gb = int(request.form.get("disk_gb", 20) or 20)
-        traffic_gib = float(request.form.get("traffic_gib", 1000) or 1000)
-        price_toman = int(request.form.get("price_toman", 1190000) or 1190000)
-        if plan_id:
-            c.execute(
-                "UPDATE vps_plans SET name_fa=?, cpus=?, ram_gb=?, disk_gb=?, traffic_gib=?, price_toman=? WHERE id=?",
-                (name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman, int(plan_id)),
-            )
-            conn.commit()
+        if request.form.get("form_type") == "upgrade_tariffs":
+            for k in ("upgrade_cpu_price", "upgrade_ram_price", "upgrade_disk_price", "max_cpu_pool", "max_ram_gb_pool", "max_disk_gb_pool"):
+                if k in request.form:
+                    set_system_setting(k, request.form.get(k, "0"))
+            upgrade_msg = "تعرفه‌های ارتقای منابع و ظرفیت کل سرورها با موفقیت ذخیره شد."
+        else:
+            plan_id = request.form.get("plan_id")
+            name_fa = request.form.get("name_fa", "").strip()
+            cpus = int(request.form.get("cpus", 1) or 1)
+            ram_gb = int(request.form.get("ram_gb", 2) or 2)
+            disk_gb = int(request.form.get("disk_gb", 20) or 20)
+            traffic_gib = float(request.form.get("traffic_gib", 1000) or 1000)
+            price_toman = int(request.form.get("price_toman", 1190000) or 1190000)
+            if plan_id:
+                c.execute(
+                    "UPDATE vps_plans SET name_fa=?, cpus=?, ram_gb=?, disk_gb=?, traffic_gib=?, price_toman=? WHERE id=?",
+                    (name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman, int(plan_id)),
+                )
+                conn.commit()
     c.execute("SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active FROM vps_plans ORDER BY price_toman ASC")
     plans = [
         {
@@ -2700,7 +2931,9 @@ def manage_plans_page():
         for r in c.fetchall()
     ]
     conn.close()
-    return render_template("manage_plans.html", plans=plans)
+    settings = get_system_settings()
+    pool = get_available_hardware_pool()
+    return render_template("manage_plans.html", plans=plans, settings=settings, pool=pool, upgrade_msg=upgrade_msg)
 
 
 @app.route("/admin_payments")

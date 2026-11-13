@@ -614,3 +614,71 @@ def remove_snapshot(esxi_host: str, port: int, user: str, password: str, vmid: i
         return True, out or "Snapshot removed"
     except Exception as e:
         return False, str(e)
+
+
+# ==============================================================================
+# Automated ESXi VM Hardware Upgrade (CPU, RAM, SSD Disk)
+# ==============================================================================
+def upgrade_vm_resources_on_esxi(
+    esxi_host: str,
+    esxi_port: int,
+    esxi_user: str,
+    esxi_password: str,
+    vmid: int,
+    vm_name: str,
+    datastore: str,
+    new_cpus: int,
+    new_ram_mb: int,
+    new_disk_gb: int,
+    expand_disk: bool = False,
+) -> Tuple[bool, str]:
+    clean_vm_name = re.sub(r"[^a-zA-Z0-9_-]", "_", (vm_name or f"vm_{vmid}").strip())
+    vm_dir = f"/vmfs/volumes/{datastore}/{clean_vm_name}"
+    vmx_path = f"{vm_dir}/{clean_vm_name}.vmx"
+    vmdk_path = f"{vm_dir}/{clean_vm_name}.vmdk"
+
+    try:
+        ssh = get_ssh_client(esxi_host, esxi_port, esxi_user, esxi_password)
+        ssh.exec_command(f"vim-cmd vmsvc/power.off {int(vmid)}")
+        time.sleep(3)
+
+        sftp = ssh.open_sftp()
+        try:
+            with sftp.file(vmx_path, "r") as f:
+                vmx_raw = f.read().decode("utf-8", errors="ignore")
+        except Exception:
+            sftp.close()
+            ssh.close()
+            return False, f"فایل VMX در مسیر {vmx_path} یافت نشد."
+
+        lines = []
+        found_cpu = False
+        found_ram = False
+        for line in vmx_raw.splitlines():
+            if line.strip().startswith("numvcpus"):
+                lines.append(f'numvcpus = "{int(new_cpus)}"')
+                found_cpu = True
+            elif line.strip().startswith("memSize"):
+                lines.append(f'memSize = "{int(new_ram_mb)}"')
+                found_ram = True
+            else:
+                lines.append(line)
+        if not found_cpu:
+            lines.append(f'numvcpus = "{int(new_cpus)}"')
+        if not found_ram:
+            lines.append(f'memSize = "{int(new_ram_mb)}"')
+
+        with sftp.file(vmx_path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        sftp.close()
+
+        if expand_disk and new_disk_gb > 0:
+            ssh.exec_command(f"vmkfstools -X {int(new_disk_gb)}G '{vmdk_path}'")
+
+        ssh.exec_command(f"vim-cmd vmsvc/reload {int(vmid)}")
+        time.sleep(1)
+        ssh.exec_command(f"vim-cmd vmsvc/power.on {int(vmid)}")
+        ssh.close()
+        return True, f"منابع ماشین مجازی #{vmid} به {new_cpus} Core / {int(new_ram_mb/1024)}GB RAM / {new_disk_gb}GB SSD ارتقا یافت."
+    except Exception as e:
+        return False, str(e)
