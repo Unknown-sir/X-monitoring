@@ -105,6 +105,13 @@
             </a>
             {% endif %}
 
+            {% if has_perm('esxi_hosts') %}
+            <a href="{{ url_for('os_templates_page') }}" class="xm-nav-item {% if request.endpoint == 'os_templates_page' %}active{% endif %}">
+                <i class="fas fa-compact-disc text-primary"></i>
+                <span>سیستم‌عامل‌ها (OS Templates)</span>
+            </a>
+            {% endif %}
+
             {% if has_perm('ip_pool') %}
             <a href="{{ url_for('ip_pool_page') }}" class="xm-nav-item {% if request.endpoint == 'ip_pool_page' %}active{% endif %}">
                 <i class="fas fa-sitemap text-success"></i>

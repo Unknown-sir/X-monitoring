@@ -259,6 +259,27 @@ def init_db():
         )"""
     )
     c.execute(
+        """CREATE TABLE IF NOT EXISTS os_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
+            vmdk_path TEXT NOT NULL,
+            os_family TEXT DEFAULT 'ubuntu',
+            active INTEGER DEFAULT 1
+        )"""
+    )
+    default_os_list = [
+        ("Ubuntu 22.04 LTS (Jammy)", "ubuntu22", "[datastore1] templates/ubuntu-22.04/ubuntu-22.04.vmdk", "ubuntu", 1),
+        ("Ubuntu 24.04 LTS (Noble)", "ubuntu24", "[datastore1] templates/ubuntu-24.04/ubuntu-24.04.vmdk", "ubuntu", 1),
+        ("Debian 12 (Bookworm)", "debian12", "[datastore1] templates/debian-12/debian-12.vmdk", "debian", 1),
+        ("AlmaLinux 9 (Enterprise)", "almalinux9", "[datastore1] templates/almalinux-9/almalinux-9.vmdk", "rhel", 1),
+    ]
+    for oname, ocode, ovmdk, ofam, oact in default_os_list:
+        c.execute(
+            "INSERT OR IGNORE INTO os_templates (name, code, vmdk_path, os_family, active) VALUES (?, ?, ?, ?, ?)",
+            (oname, ocode, ovmdk, ofam, oact),
+        )
+    c.execute(
         """CREATE TABLE IF NOT EXISTS vps_plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE,
@@ -355,6 +376,7 @@ def init_db():
         ("max_cpu_pool", "64", now_init),
         ("max_ram_gb_pool", "64", now_init),
         ("max_disk_gb_pool", "1000", now_init),
+        ("last_db_backup_at", "", now_init),
     ]
     for sk, sv, st in default_settings:
         c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
@@ -378,6 +400,11 @@ def init_db():
         ("cpus", "INTEGER DEFAULT 2"),
         ("ram_mb", "INTEGER DEFAULT 2048"),
         ("disk_gb", "INTEGER DEFAULT 20"),
+        ("expires_at", "TEXT DEFAULT NULL"),
+        ("expiry_warned_at", "TEXT DEFAULT NULL"),
+        ("monthly_price", "INTEGER DEFAULT 0"),
+        ("os_name", "TEXT DEFAULT 'Ubuntu 22.04 LTS'"),
+        ("template_vmdk", "TEXT DEFAULT NULL"),
     ]
     for col_name, col_type in needed_cols:
         if col_name not in cols:
@@ -1016,7 +1043,7 @@ def _update_admin_telegram_receipt_status(req_row: dict, final_status_line: str)
         )
 
 
-def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str) -> str:
+def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str, os_template_id: int | None = None) -> str:
     c.execute(
         "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman FROM vps_plans WHERE id=?",
         (plan_id,),
@@ -1024,7 +1051,14 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
     plan_row = c.fetchone()
     if not plan_row:
         return "پلن مورد نظر یافت نشد."
-    _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, _ = plan_row
+    _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, plan_price = plan_row
+    chosen_os_name = "Ubuntu 22.04 LTS"
+    chosen_vmdk = None
+    if os_template_id:
+        c.execute("SELECT name, vmdk_path FROM os_templates WHERE id=? AND active=1", (int(os_template_id),))
+        os_row = c.fetchone()
+        if os_row:
+            chosen_os_name, chosen_vmdk = os_row[0], os_row[1]
     ram_mb = int(ram_gb) * 1024
     clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label or "") or f"cc-{p_code}-{int(time.time()) % 10000}"
 
@@ -1077,7 +1111,7 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             ram_mb=ram_mb,
             disk_gb=disk_gb,
             datastore=esxi_row[5],
-            template_vmdk=esxi_row[7],
+            template_vmdk=chosen_vmdk or esxi_row[7],
             network_name=esxi_row[6],
             mac_address=mac_addr,
             seed_iso_bytes=seed_iso,
@@ -1086,12 +1120,14 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             vmid = created_vmid
 
     now_iso = datetime.datetime.utcnow().isoformat()
+    expires_at_str = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
     c.execute(
         """INSERT INTO servers (
             name, ip, username, password, traffic_limit, active, traffic_usage,
             updated_at, esxi_host_id, vmid, vm_name, is_suspended,
-            netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb
-        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb,
+            expires_at, monthly_price, os_name, template_vmdk
+        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             clean_name,
             primary_ip,
@@ -1110,6 +1146,10 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             cpus,
             ram_mb,
             disk_gb,
+            expires_at_str,
+            plan_price,
+            chosen_os_name,
+            chosen_vmdk,
         ),
     )
     srv_id = c.lastrowid
@@ -1186,9 +1226,46 @@ def get_available_hardware_pool() -> dict:
     }
 
 
+def _execute_vps_renewal(c, server_id: int, months: int = 1) -> str:
+    c.execute(
+        """SELECT s.id, s.name, s.expires_at, s.is_suspended, s.vmid, s.esxi_host_id,
+                  h.ip, h.port, h.username, h.password
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        return "سرور یافت نشد."
+    _, srv_name, cur_exp, is_susp, vmid, host_id, esxi_ip, esxi_port, esxi_u, esxi_p = row
+    today = datetime.datetime.utcnow().date()
+    base_date = today
+    if cur_exp:
+        try:
+            parsed = datetime.datetime.strptime(cur_exp, "%Y-%m-%d").date()
+            if parsed > today:
+                base_date = parsed
+        except Exception:
+            pass
+    new_exp = (base_date + datetime.timedelta(days=30 * max(1, int(months)))).strftime("%Y-%m-%d")
+    c.execute("UPDATE servers SET expires_at=?, expiry_warned_at=NULL, active=1 WHERE id=?", (new_exp, server_id))
+
+    if is_susp and host_id and vmid and esxi_ip:
+        esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, connected=True)
+        c.execute("UPDATE servers SET is_suspended=0 WHERE id=?", (server_id,))
+
+    now_iso = datetime.datetime.utcnow().isoformat()
+    c.execute(
+        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+        (server_id, f"سرور {srv_name} به مدت {months} ماه تمدید شد (انقضای جدید: {new_exp}).", now_iso),
+    )
+    invalidate_servers_cache()
+    return f"سرور {srv_name} تا تاریخ {new_exp} تمدید شد و شبکه در صورت قطع بودن مجدداً متصل گردید."
+
+
 def _execute_vps_upgrade(c, server_id: int, add_cpu: int, add_ram_gb: int, add_disk_gb: int) -> str:
     c.execute(
         """SELECT s.id, s.name, s.vm_name, s.vmid, s.esxi_host_id, s.cpus, s.ram_mb, s.disk_gb,
+                  s.ip, s.username, s.password,
                   h.ip, h.port, h.username, h.password, h.default_datastore
            FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
         (server_id,),
@@ -1197,7 +1274,7 @@ def _execute_vps_upgrade(c, server_id: int, add_cpu: int, add_ram_gb: int, add_d
     if not row:
         return "سرور مورد نظر یافت نشد."
 
-    _, srv_name, vm_name, vmid, host_id, cur_cpus, cur_ram_mb, cur_disk_gb, esxi_ip, esxi_port, esxi_u, esxi_p, datastore = row
+    _, srv_name, vm_name, vmid, host_id, cur_cpus, cur_ram_mb, cur_disk_gb, srv_ip, srv_u, srv_p, esxi_ip, esxi_port, esxi_u, esxi_p, datastore = row
     new_cpus = int(cur_cpus or 1) + int(add_cpu)
     new_ram_mb = int(cur_ram_mb or 2048) + (int(add_ram_gb) * 1024)
     new_disk_gb = int(cur_disk_gb or 20) + int(add_disk_gb)
@@ -1232,8 +1309,12 @@ def _execute_vps_upgrade(c, server_id: int, add_cpu: int, add_ram_gb: int, add_d
             now_iso,
         ),
     )
+    part_note = ""
+    if add_disk_gb > 0 and srv_ip:
+        ok_part, msg_part = esxi_manager.expand_linux_partition_via_ssh(srv_ip, srv_u or "root", srv_p or "")
+        part_note = f" ({msg_part})"
     invalidate_servers_cache()
-    return f"سخت‌افزار سرور {srv_name} به {new_cpus} هسته CPU، {int(new_ram_mb/1024)} گیگ رم و {new_disk_gb} گیگ SSD ارتقا یافت."
+    return f"سخت‌افزار سرور {srv_name} به {new_cpus} هسته CPU، {int(new_ram_mb/1024)} گیگ رم و {new_disk_gb} گیگ SSD ارتقا یافت.{part_note}"
 
 
 def _execute_ip_service(c, server_id: int, op_type: str) -> str:
@@ -1371,6 +1452,13 @@ def decide_payment_request(req_id: int, action: str, actor_label: str, reject_re
                 int(payload.get("plan_id", 1)),
                 payload.get("vm_name", ""),
                 payload.get("root_password", "Ubuntu@12345"),
+                os_template_id=payload.get("os_template_id"),
+            )
+        elif rtype == "renew_vps":
+            fulfillment_note = _execute_vps_renewal(
+                c,
+                int(payload.get("server_id", 0)),
+                int(payload.get("months", 1)),
             )
         elif rtype == "recharge_traffic":
             fulfillment_note = _execute_traffic_recharge(
@@ -1507,6 +1595,72 @@ def inject_user_wallet():
         "brand_name": "کلود کیوب",
         "brand_en": "Cloud Cube",
     }
+
+
+def get_active_os_templates():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name, code, vmdk_path, os_family, active FROM os_templates WHERE active=1 ORDER BY id ASC")
+    rows = [
+        {"id": r[0], "name": r[1], "code": r[2], "vmdk_path": r[3], "os_family": r[4], "active": bool(r[5])}
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return rows
+
+
+def send_database_backup_to_owner(force: bool = False) -> tuple[bool, str]:
+    """Sends a consistent SQLite snapshot of database.db to Owner (marmmr) / Admin Telegram via SOCKS5 proxy."""
+    cfg = get_system_settings()
+    token = (cfg.get("telegram_bot_token") or "").strip()
+    if not token or token == "YOUR_BOT_TOKEN":
+        return False, "توکن ربات تلگرام تنظیم نشده است."
+
+    # Find owner's telegram_chat_id (marmmr) first, fallback to admin_chat_id
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT telegram_chat_id FROM users WHERE username='marmmr' OR role='owner' ORDER BY id ASC LIMIT 1")
+    o_row = c.fetchone()
+    conn.close()
+    target_chat = (o_row[0].strip() if o_row and o_row[0] else "") or (cfg.get("admin_chat_id") or "").strip()
+    if not target_chat or target_chat == "YOUR_CHAT_ID":
+        return False, "چت‌آیدی تلگرام مالک (marmmr) یا ادمین تنظیم نشده است."
+
+    # Create a safe consistent SQLite backup file
+    backup_name = f"cloudcube_backup_{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+    backup_path = os.path.join("/tmp", backup_name) if os.path.exists("/tmp") else backup_name
+    try:
+        src_conn = get_db_connection()
+        dst_conn = sqlite3.connect(backup_path)
+        src_conn.backup(dst_conn)
+        dst_conn.close()
+        src_conn.close()
+
+        caption = (
+            f"💾 *بکاپ خودکار دیتابیس کلود کیوب*\n"
+            f"📅 زمان: `{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}`\n"
+            f"🔒 شامل تمام کاربران، سرورها، فیش‌ها و تیکت‌ها"
+        )
+        with open(backup_path, "rb") as bf:
+            res = tg_api_request(
+                "sendDocument",
+                data={"chat_id": target_chat, "caption": caption, "parse_mode": "Markdown"},
+                files={"document": (backup_name, bf)},
+                timeout=35,
+            )
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        if res.get("ok"):
+            set_system_setting("last_db_backup_at", datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
+            return True, "فایل بکاپ دیتابیس با موفقیت به تلگرام مالک ارسال شد."
+        return False, f"خطا در ارسال تلگرام: {res.get('description', 'نامشخص')}"
+    except Exception as e:
+        if os.path.exists(backup_path):
+            try:
+                os.remove(backup_path)
+            except Exception:
+                pass
+        return False, str(e)
 
 
 def get_active_plans():
@@ -1648,12 +1802,12 @@ def dashboard():
     c = conn.cursor()
     if session["role"] in ["admin", "owner"]:
         c.execute(
-            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid, active, plan_name, cpus, ram_mb, disk_gb "
+            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid, active, plan_name, cpus, ram_mb, disk_gb, expires_at, monthly_price, os_name "
             "FROM servers ORDER BY id DESC"
         )
     else:
         c.execute(
-            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid, s.active, s.plan_name, s.cpus, s.ram_mb, s.disk_gb "
+            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid, s.active, s.plan_name, s.cpus, s.ram_mb, s.disk_gb, s.expires_at, s.monthly_price, s.os_name "
             "FROM servers s JOIN user_servers us ON s.id = us.server_id "
             "WHERE us.user_id=? ORDER BY s.id DESC",
             (session["user_id"],),
@@ -1679,11 +1833,15 @@ def dashboard():
     ]
     conn.close()
     plans = get_active_plans()
+    os_templates = get_active_os_templates()
+    today_str = datetime.datetime.utcnow().strftime("%Y-%m-%d")
 
     return render_template(
         "dashboard.html",
         servers=servers,
         plans=plans,
+        os_templates=os_templates,
+        today_str=today_str,
         my_requests=my_requests,
         role=session["role"],
         time_left=time_left,
@@ -1765,6 +1923,7 @@ def order_vps_page():
     if is_user_kyc_blocked(session["user_id"], session.get("role", "user")):
         return redirect(url_for("kyc_page"))
     plans = get_active_plans()
+    os_templates = get_active_os_templates()
     selected_code = request.args.get("plan", "gold")
     error_msg = None
     success_msg = None
@@ -1773,6 +1932,8 @@ def order_vps_page():
         plan_id = int(request.form.get("plan_id", 0) or 0)
         vm_label = request.form.get("vm_name", "").strip()
         root_password = request.form.get("root_password", "").strip()
+        os_tpl_raw = request.form.get("os_template_id", "").strip()
+        os_template_id = int(os_tpl_raw) if os_tpl_raw.isdigit() else None
         pay_method = request.form.get("pay_method", "receipt").strip()
         tracking_note = request.form.get("tracking_note", "").strip()
 
@@ -1808,7 +1969,7 @@ def order_vps_page():
                         error_msg = f"موجودی کیف پول شما کافی نیست ({price_toman:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
                         return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg)
 
-                _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password)
+                _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password, os_template_id=os_template_id)
                 conn.commit()
                 conn.close()
                 return redirect(url_for("dashboard"))
@@ -1821,7 +1982,7 @@ def order_vps_page():
                 else:
                     now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
                     title = f"خرید {p_name_fa} ({clean_name})"
-                    payload = json.dumps({"plan_id": plan_id, "vm_name": clean_name, "root_password": root_password})
+                    payload = json.dumps({"plan_id": plan_id, "vm_name": clean_name, "root_password": root_password, "os_template_id": os_template_id})
                     c.execute(
                         """INSERT INTO payment_requests (
                             user_id, username, request_type, title, amount_toman, receipt_filename,
@@ -1835,7 +1996,7 @@ def order_vps_page():
                     notify_admin_new_receipt(req_id, session.get("username", "user"), title, price_toman, tracking_note, file_or_err)
                     success_msg = f"سفارش {p_name_fa} و فیش واریزی شما (#{req_id}) ثبت شد. به محض تایید ادمین، سرور به صورت خودکار ساخته و در پنل شما فعال می‌شود."
 
-    return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
+    return render_template("order_vps.html", plans=plans, os_templates=os_templates, selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
 
 
 @app.route("/server/<int:server_id>/power/<action>", methods=["POST"])
@@ -1882,11 +2043,19 @@ def user_rebuild_action(server_id):
         return "Forbidden", 403
 
     new_pass = request.form.get("new_password", "").strip()
+    os_tpl_raw = request.form.get("os_template_id", "").strip()
     conn = get_db_connection()
     c = conn.cursor()
+    chosen_os_name = None
+    chosen_vmdk = None
+    if os_tpl_raw.isdigit():
+        c.execute("SELECT name, vmdk_path FROM os_templates WHERE id=? AND active=1", (int(os_tpl_raw),))
+        osr = c.fetchone()
+        if osr:
+            chosen_os_name, chosen_vmdk = osr[0], osr[1]
     c.execute(
         """SELECT s.vm_name, s.vmid, s.esxi_host_id, s.ip, s.netmask, s.gateway, s.ipv6, s.ipv6_gateway, s.extra_ips,
-                  s.username, s.password, h.ip, h.port, h.username, h.password, h.default_datastore, h.template_vmdk
+                  s.username, s.password, h.ip, h.port, h.username, h.password, h.default_datastore, COALESCE(s.template_vmdk, h.template_vmdk)
            FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
         (server_id,),
     )
@@ -1899,6 +2068,8 @@ def user_rebuild_action(server_id):
         final_pass = new_pass if len(new_pass) >= 6 else ssh_pass
         if new_pass and len(new_pass) >= 6:
             c.execute("UPDATE servers SET password=? WHERE id=?", (final_pass, server_id))
+        if chosen_os_name and chosen_vmdk:
+            c.execute("UPDATE servers SET os_name=?, template_vmdk=? WHERE id=?", (chosen_os_name, chosen_vmdk, server_id))
 
         if host_id and vmid and esxi_ip and template:
             extra_list = [x.strip() for x in re.split(r"[,\n]", extra_ips or "") if x.strip()]
@@ -1925,7 +2096,7 @@ def user_rebuild_action(server_id):
                 vmid=vmid,
                 vm_name=vm_name,
                 datastore=datastore,
-                template_vmdk=template,
+                template_vmdk=chosen_vmdk or template,
                 seed_iso_bytes=seed_iso,
             )
         now_iso = datetime.datetime.utcnow().isoformat()
@@ -2325,6 +2496,106 @@ def upgrade_vps_page(server_id):
         error_msg=error_msg,
         success_msg=success_msg,
     )
+
+
+@app.route("/server/<int:server_id>/renew", methods=["POST"])
+@login_required
+def renew_vps_action(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+
+    try:
+        months = max(1, min(12, int(request.form.get("months", 1) or 1)))
+    except ValueError:
+        months = 1
+    pay_method = request.form.get("pay_method", "receipt").strip()
+    tracking_note = request.form.get("tracking_note", "").strip()
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT name, COALESCE(monthly_price, 1450000) FROM servers WHERE id=?", (server_id,))
+    s_row = c.fetchone()
+    if not s_row:
+        conn.close()
+        return redirect(url_for("dashboard"))
+    srv_name, monthly_price = s_row
+    if monthly_price <= 0:
+        monthly_price = 1450000
+    total_cost = int(monthly_price) * months
+
+    if session.get("role") in ["admin", "owner"] or pay_method == "wallet":
+        if session.get("role") not in ["admin", "owner"]:
+            c.execute(
+                "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                (total_cost, session["user_id"], total_cost),
+            )
+            if c.rowcount == 0:
+                conn.close()
+                return redirect(url_for("wallet_page"))
+        _execute_vps_renewal(c, server_id, months)
+        conn.commit()
+        conn.close()
+        return redirect(request.referrer or url_for("dashboard"))
+
+    receipt_file = request.files.get("receipt_file")
+    ok_file, file_or_err = save_validated_receipt(receipt_file, session["user_id"])
+    if not ok_file:
+        conn.close()
+        return redirect(url_for("wallet_page"))
+
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    title = f"تمدید ماهانه سرور {srv_name} ({months} ماه)"
+    payload = json.dumps({"server_id": server_id, "months": months})
+    c.execute(
+        """INSERT INTO payment_requests (
+            user_id, username, request_type, title, amount_toman, receipt_filename,
+            tracking_note, payload_json, status, created_at
+        ) VALUES (?, ?, 'renew_vps', ?, ?, ?, ?, ?, 'pending', ?)""",
+        (session["user_id"], session.get("username", "user"), title, total_cost, file_or_err, tracking_note, payload, now_str),
+    )
+    req_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    notify_admin_new_receipt(req_id, session.get("username", "user"), title, total_cost, tracking_note, file_or_err)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/os_templates", methods=["GET", "POST"])
+@perm_required("esxi_hosts")
+def os_templates_page():
+    conn = get_db_connection()
+    c = conn.cursor()
+    msg = None
+    if request.method == "POST":
+        action = request.form.get("action", "add")
+        if action == "add":
+            name = request.form.get("name", "").strip()
+            code_val = re.sub(r"[^a-zA-Z0-9_-]", "", request.form.get("code", "").strip().lower())
+            vmdk_path = request.form.get("vmdk_path", "").strip()
+            os_family = request.form.get("os_family", "ubuntu").strip()
+            if name and code_val and vmdk_path:
+                c.execute(
+                    "INSERT OR REPLACE INTO os_templates (name, code, vmdk_path, os_family, active) VALUES (?, ?, ?, ?, 1)",
+                    (name, code_val, vmdk_path, os_family),
+                )
+                conn.commit()
+                msg = f"تمپلیت سیستم‌عامل «{name}» ذخیره شد."
+        elif action == "toggle":
+            tid = int(request.form.get("template_id", 0) or 0)
+            c.execute("UPDATE os_templates SET active = CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?", (tid,))
+            conn.commit()
+        elif action == "delete":
+            tid = int(request.form.get("template_id", 0) or 0)
+            c.execute("DELETE FROM os_templates WHERE id=?", (tid,))
+            conn.commit()
+
+    c.execute("SELECT id, name, code, vmdk_path, os_family, active FROM os_templates ORDER BY id ASC")
+    templates_list = [
+        {"id": r[0], "name": r[1], "code": r[2], "vmdk_path": r[3], "os_family": r[4], "active": bool(r[5])}
+        for r in c.fetchall()
+    ]
+    conn.close()
+    return render_template("os_templates.html", os_templates=templates_list, message=msg)
 
 
 @app.route("/tickets", methods=["GET", "POST"])
@@ -3005,6 +3276,12 @@ def admin_settings_page():
                 if f_key in request.form:
                     set_system_setting(f_key, request.form.get(f_key, ""))
             msg = "تنظیمات درگاه کارت‌به‌کارت، ربات تلگرام و پروکسی با موفقیت ذخیره و به صورت زنده اعمال شد."
+        elif action == "backup_now":
+            ok_bk, msg_bk = send_database_backup_to_owner(force=True)
+            if ok_bk:
+                msg = msg_bk
+            else:
+                err = msg_bk
         elif action == "test_telegram":
             res = tg_api_request("getMe", timeout=12)
             if res.get("ok"):
@@ -4725,6 +5002,98 @@ def monitor_servers():
         time.sleep(10)
 
 
+
+def daily_lifecycle_and_backup_worker():
+    """
+    Runs in background:
+    1. Sends database.db backup to Owner (marmmr) on Telegram every 24 hours.
+    2. Checks server expiration dates: sends 3-day warning and auto-suspends ESXi vNIC on expiry.
+    """
+    while True:
+        try:
+            cfg = get_system_settings()
+            # 1. Check 24-hour Database Backup schedule
+            last_bk_str = (cfg.get("last_db_backup_at") or "").strip()
+            due_for_backup = False
+            if not last_bk_str:
+                due_for_backup = True
+            else:
+                try:
+                    last_dt = datetime.datetime.strptime(last_bk_str, "%Y-%m-%d %H:%M:%S")
+                    if (datetime.datetime.utcnow() - last_dt).total_seconds() >= 86400:
+                        due_for_backup = True
+                except Exception:
+                    due_for_backup = True
+
+            if due_for_backup:
+                send_database_backup_to_owner(force=False)
+
+            # 2. Check Server Expiration (3-day warning + Auto-Suspend on expiry)
+            today_date = datetime.datetime.utcnow().date()
+            today_str = today_date.strftime("%Y-%m-%d")
+            warn_threshold = (today_date + datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+            admin_chat = (cfg.get("admin_chat_id") or "").strip()
+
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute(
+                """SELECT s.id, s.name, s.ip, s.expires_at, s.expiry_warned_at, s.is_suspended,
+                          s.vmid, s.esxi_host_id, s.telegram_chat_id,
+                          h.ip, h.port, h.username, h.password
+                   FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id
+                   WHERE s.active=1 AND s.expires_at IS NOT NULL AND s.expires_at != ''"""
+            )
+            srv_rows = c.fetchall()
+
+            for sr in srv_rows:
+                sid, sname, sip, exp_at, warned_at, is_susp, vmid, host_id, srv_tg, esxi_ip, esxi_port, esxi_u, esxi_p = sr
+                # Find linked user telegram chat id
+                c.execute(
+                    "SELECT u.telegram_chat_id FROM users u JOIN user_servers us ON u.id=us.user_id WHERE us.server_id=? LIMIT 1",
+                    (sid,),
+                )
+                ur = c.fetchone()
+                user_tg = (ur[0].strip() if ur and ur[0] else "") or (srv_tg or "").strip()
+
+                # Expired -> Auto-Suspend vNIC on ESXi!
+                if exp_at < today_str and not is_susp:
+                    if host_id and vmid and esxi_ip:
+                        esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, connected=False)
+                    c.execute("UPDATE servers SET is_suspended=1 WHERE id=?", (sid,))
+                    now_iso = datetime.datetime.utcnow().isoformat()
+                    msg = (
+                        f"⛔ *سررسید ماهانه و تعلیق خودکار:* مهلت سرویس *{sname}* (`{sip}`) در تاریخ `{exp_at}` به پایان رسید و پورت شبکه مسدود شد. "
+                        "جهت بازگشایی، از پنل کاربری اقدام به تمدید نمایید."
+                    )
+                    c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (sid, msg, now_iso))
+                    conn.commit()
+                    if user_tg:
+                        send_telegram_alert(user_tg, msg)
+                    if admin_chat:
+                        send_telegram_alert(admin_chat, msg)
+
+                # 3 Days or Less Remaining -> Send Renewal Warning
+                elif today_str <= exp_at <= warn_threshold and not warned_at:
+                    c.execute("UPDATE servers SET expiry_warned_at=? WHERE id=?", (today_str, sid))
+                    now_iso = datetime.datetime.utcnow().isoformat()
+                    warn_msg = (
+                        f"⏳ *یادآوری تمدید سرویس:* سرویس *{sname}* (`{sip}`) در تاریخ `{exp_at}` منقضی می‌شود. "
+                        "لطفاً پیش از سررسید از پنل کاربری اقدام به تمدید ماهانه کنید تا شبکه قطع نشود."
+                    )
+                    c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'warning', ?, ?)", (sid, warn_msg, now_iso))
+                    conn.commit()
+                    if user_tg:
+                        send_telegram_alert(user_tg, warn_msg)
+                    if admin_chat:
+                        send_telegram_alert(admin_chat, warn_msg)
+
+            conn.close()
+        except Exception as e:
+            logging.error(f"Lifecycle/Backup worker error: {e}")
+
+        time.sleep(300)  # Check every 5 minutes
+
+
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False, use_reloader=False)
 
@@ -4740,6 +5109,8 @@ def main():
 
     # Start background server traffic monitoring thread
     monitor_thread = threading.Thread(target=monitor_servers, daemon=True)
+    lifecycle_thread = threading.Thread(target=daily_lifecycle_and_backup_worker, daemon=True)
+    lifecycle_thread.start()
     monitor_thread.start()
 
     run_flask()

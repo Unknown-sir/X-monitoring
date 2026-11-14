@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}مدیریت تمپلیت‌های سیستم‌عامل (OS Selector) | کلود کیوب{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
+    <div class="d-flex align-items-center gap-3">
+        <span class="xm-logo-badge"><i class="fas fa-compact-disc"></i></span>
+        <div>
+            <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">مدیریت تمپلیت‌های سیستم‌عامل (OS Templates)</h1>
+            <span class="small text-muted">تعریف ایمیج‌های آماده ESXi (اوبونتو ۲۲.۰۴، ۲۴.۰۴، دبیان ۱۲، آلمالینوکس و ...) جهت انتخاب مشتری هنگام خرید و ریبیلد</span>
+        </div>
+    </div>
+</div>
+
+{% if message %}
+<div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ message }}</div>
+{% endif %}
+
+<div class="row g-4 anim-fade-up">
+    <!-- Add New OS Template -->
+    <div class="col-12 col-xl-4">
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.08rem;"><i class="fas fa-plus-circle text-primary me-1"></i> افزودن تمپلیت سیستم‌عامل جدید</h3>
+            <form method="POST" action="{{ url_for('os_templates_page') }}" class="d-flex flex-column gap-3">
+                <input type="hidden" name="action" value="add">
+                <div>
+                    <label class="form-label">نام نمایشی سیستم‌عامل</label>
+                    <input type="text" name="name" class="form-control" placeholder="مثلاً Ubuntu 24.04 LTS" required>
+                </div>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label">کد یکتا (انگلیسی)</label>
+                        <input type="text" name="code" class="form-control font-mono" placeholder="ubuntu24" required>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">خانواده سیستم‌عامل</label>
+                        <select name="os_family" class="form-select form-select-sm">
+                            <option value="ubuntu">Ubuntu</option>
+                            <option value="debian">Debian</option>
+                            <option value="rhel">AlmaLinux / Rocky</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label">مسیر VMDK مرجع در دیتاستور ESXi</label>
+                    <input type="text" name="vmdk_path" class="form-control font-mono" placeholder="/vmfs/volumes/datastore1/templates/ubuntu24/ubuntu24.vmdk" required>
+                </div>
+                <button type="submit" class="btn btn-primary rounded-pill py-2 mt-1">
+                    <i class="fas fa-save"></i> افزودن و فعال‌سازی تمپلیت
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- List of OS Templates -->
+    <div class="col-12 col-xl-8">
+        <div class="card p-4 h-100">
+            <h3 class="fw-bold mb-3" style="font-size: 1.08rem;"><i class="fas fa-list text-gold me-1"></i> سیستم‌عامل‌های قابل انتخاب برای مشتریان</h3>
+            <div class="table-responsive">
+                <table class="table small mb-0">
+                    <thead>
+                        <tr>
+                            <th>نام سیستم‌عامل</th>
+                            <th>کد</th>
+                            <th>مسیر VMDK در ESXi</th>
+                            <th>وضعیت</th>
+                            <th>عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for os_t in os_templates %}
+                        <tr>
+                            <td><strong>{{ os_t.name }}</strong></td>
+                            <td class="font-mono text-info">{{ os_t.code }}</td>
+                            <td class="font-mono text-muted" style="font-size: 0.76rem;">{{ os_t.vmdk_path }}</td>
+                            <td>
+                                {% if os_t.active %}
+                                    <span class="badge bg-success-subtle">فعال</span>
+                                {% else %}
+                                    <span class="badge bg-secondary-subtle">غیرفعال</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    <form method="POST" action="{{ url_for('os_templates_page') }}" class="m-0">
+                                        <input type="hidden" name="action" value="toggle">
+                                        <input type="hidden" name="template_id" value="{{ os_t.id }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2">تغییر وضعیت</button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('os_templates_page') }}" class="m-0" onsubmit="return confirm('حذف شود؟')">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="template_id" value="{{ os_t.id }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

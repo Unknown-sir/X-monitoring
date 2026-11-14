@@ -55,6 +55,14 @@
                         <input type="text" name="root_password" class="form-control font-mono" placeholder="StrongPassword123" required>
                     </div>
                     <div>
+                        <label class="form-label">انتخاب سیستم‌عامل (OS Template)</label>
+                        <select name="os_template_id" class="form-select">
+                            {% for os_t in os_templates %}
+                            <option value="{{ os_t.id }}">{{ os_t.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
                         <label class="form-label">روش پرداخت</label>
                         <select name="pay_method" class="form-select" onchange="document.getElementById('vpsReceiptBox').style.display = (this.value === 'receipt' ? 'block' : 'none');">
                             <option value="receipt" selected>واریز کارت به کارت و بارگذاری فیش (تایید ادمین)</option>

@@ -8,12 +8,20 @@
         </h1>
         <span class="small text-muted">تمامی تغییرات بدون نیاز به ری‌استارت شدن پروژه به صورت زنده اعمال می‌شوند</span>
     </div>
-    <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
-        <input type="hidden" name="action" value="test_telegram">
-        <button type="submit" class="btn btn-sm btn-outline-info rounded-pill px-3">
-            <i class="fas fa-satellite-dish"></i> تست اتصال ربات تلگرام با پروکسی
-        </button>
-    </form>
+    <div class="d-flex flex-wrap gap-2">
+        <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
+            <input type="hidden" name="action" value="backup_now">
+            <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">
+                <i class="fas fa-database"></i> ارسال فوری بکاپ دیتابیس به تلگرام مالک
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
+            <input type="hidden" name="action" value="test_telegram">
+            <button type="submit" class="btn btn-sm btn-outline-info rounded-pill px-3">
+                <i class="fas fa-satellite-dish"></i> تست اتصال ربات با پروکسی
+            </button>
+        </form>
+    </div>
 </div>
 
 {% if message %}

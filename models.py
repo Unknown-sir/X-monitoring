@@ -163,3 +163,13 @@ class TicketMessage(Base):
     message = Column(Text, nullable=False)
     attachment_filename = Column(String(255), nullable=True)
     created_at = Column(String(64), nullable=False)
+
+class OsTemplate(Base):
+    __tablename__ = "os_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(150), nullable=False)
+    code = Column(String(64), unique=True, nullable=False)
+    vmdk_path = Column(String(500), nullable=False)
+    os_family = Column(String(50), nullable=False, default="ubuntu")
+    active = Column(Boolean, nullable=False, default=True)

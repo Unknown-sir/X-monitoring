@@ -120,6 +120,9 @@
     {% set cpus = s[10] or 2 %}
     {% set ram_mb = s[11] or 2048 %}
     {% set disk_gb = s[12] or 20 %}
+    {% set exp_at = s[13] or 'نامحدود' %}
+    {% set m_price = s[14] or 1450000 %}
+    {% set os_title = s[15] or 'Ubuntu 22.04 LTS' %}
     {% set pct = ((usage_gib / limit_gib) * 100)|round(1) if limit_gib > 0 else 0 %}
     {% set ring_off = (176 - (176 * ([pct, 100]|min) / 100))|round(1) %}
 
@@ -215,10 +218,34 @@
                 </div>
 
                 <div class="col-12 col-md-5">
-                    <form method="POST" action="{{ url_for('user_rebuild_action', server_id=srv_id) }}" class="d-flex gap-1 align-items-center" onsubmit="return confirm('ریبیلد اوبونتو با حفظ آی‌پی {{ srv_ip }} انجام شود؟')">
-                        <input type="text" name="new_password" class="form-control form-control-sm font-mono" placeholder="رمز root جدید">
+                    <form method="POST" action="{{ url_for('user_rebuild_action', server_id=srv_id) }}" class="d-flex flex-wrap gap-1 align-items-center" onsubmit="return confirm('سیستم‌عامل سرور با حفظ آی‌پی {{ srv_ip }} نصب مجدد شود؟')">
+                        <select name="os_template_id" class="form-select form-select-sm" style="flex: 1;">
+                            {% for os_t in os_templates %}
+                            <option value="{{ os_t.id }}">{{ os_t.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" name="new_password" class="form-control form-control-sm font-mono" placeholder="رمز root" style="max-width: 105px;">
                         <button type="submit" class="btn btn-sm btn-outline-warning" style="white-space: nowrap;">
                             <i class="fas fa-compact-disc"></i> ریبیلد
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Monthly Renewal Row -->
+                <div class="col-12 pt-2 border-top">
+                    <form method="POST" action="{{ url_for('renew_vps_action', server_id=srv_id) }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-1 align-items-center">
+                        <span class="small text-muted me-1"><i class="fas fa-calendar-check text-gold"></i> تمدید ماهانه:</span>
+                        <select name="months" class="form-select form-select-sm" style="width: auto;">
+                            <option value="1">۱ ماهه ({{ "{:,}".format(m_price) }} ت)</option>
+                            <option value="3">۳ ماهه ({{ "{:,}".format(m_price * 3) }} ت)</option>
+                        </select>
+                        <select name="pay_method" class="form-select form-select-sm" style="width: auto;" onchange="this.form.querySelector('.rn-file-{{ srv_id }}').style.display = (this.value === 'receipt' ? 'inline-block' : 'none');">
+                            <option value="receipt" selected>با فیش واریزی</option>
+                            <option value="wallet">از کیف پول</option>
+                        </select>
+                        <input type="file" name="receipt_file" accept=".jpg,.jpeg,.png,.webp" class="form-control form-control-sm rn-file-{{ srv_id }}" style="max-width: 185px;">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-rotate"></i> تمدید سرویس
                         </button>
                     </form>
                 </div>

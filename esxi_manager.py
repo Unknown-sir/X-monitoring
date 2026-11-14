@@ -682,3 +682,50 @@ def upgrade_vm_resources_on_esxi(
         return True, f"منابع ماشین مجازی #{vmid} به {new_cpus} Core / {int(new_ram_mb/1024)}GB RAM / {new_disk_gb}GB SSD ارتقا یافت."
     except Exception as e:
         return False, str(e)
+
+
+def expand_linux_partition_via_ssh(
+    vm_ip: str,
+    ssh_user: str,
+    ssh_password: str,
+    ssh_port: int = 22,
+    retries: int = 6,
+    delay_sec: int = 5,
+) -> Tuple[bool, str]:
+    """
+    Waits briefly for VM SSH after ESXi disk expansion and runs growpart + resize2fs/xfs_growfs
+    so the Linux OS immediately sees the added SSD space without manual commands.
+    """
+    if not vm_ip or "در انتظار" in str(vm_ip):
+        return False, "آی‌پی معتبر برای اتصال SSH جهت گسترش پارتیشن وجود ندارد."
+
+    remote_script = (
+        "for d in /sys/class/scsi_disk/*/device/rescan; do echo 1 > \"$d\" 2>/dev/null || true; done; "
+        "ROOT_SRC=$(findmnt -n -o SOURCE /); "
+        "if [[ \"$ROOT_SRC\" =~ ^(/dev/[a-zA-Z0-9]+)p?([0-9]+)$ ]]; then "
+        "DISK=\"${BASH_REMATCH[1]}\"; PART=\"${BASH_REMATCH[2]}\"; "
+        "if [[ \"$ROOT_SRC\" == /dev/nvme* ]]; then DISK=\"${ROOT_SRC%p*}\"; fi; "
+        "command -v growpart >/dev/null 2>&1 && growpart \"$DISK\" \"$PART\" || true; "
+        "fi; "
+        "FSTYPE=$(findmnt -n -o FSTYPE /); "
+        "if [ \"$FSTYPE\" = \"xfs\" ]; then xfs_growfs / || true; else resize2fs \"$ROOT_SRC\" || true; fi"
+    )
+
+    last_err = ""
+    for _ in range(retries):
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(vm_ip, port=ssh_port, username=ssh_user or "root", password=ssh_password or "", timeout=10)
+            quoted_pw = shlex.quote(ssh_password or "")
+            quoted_script = shlex.quote(remote_script)
+            cmd = f"echo {quoted_pw} | sudo -S bash -c {quoted_script}"
+            _, stdout, stderr = ssh.exec_command(cmd, timeout=25)
+            stdout.read()
+            err = stderr.read().decode(errors="ignore").strip()
+            ssh.close()
+            return True, "پارتیشن سیستم‌عامل به صورت خودکار گسترش یافت." if not err else f"پارتیشن گسترش یافت ({err[:80]})"
+        except Exception as e:
+            last_err = str(e)
+            time.sleep(delay_sec)
+    return False, f"اتصال SSH پس از ارتقا برقرار نشد: {last_err}"
