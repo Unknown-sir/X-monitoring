@@ -38,7 +38,7 @@
     <div class="col-12 col-md-4">
         <div class="card p-3 h-100 d-flex flex-row align-items-center justify-content-between">
             <div>
-                <div class="small text-muted mb-1">کل مصرف ترافیک سرویس‌ها</div>
+                <div class="small text-muted mb-1">کل حجم مصرفی (دانلود)</div>
                 <div class="fw-extrabold font-mono" style="font-size: 1.35rem; color: var(--accent);">
                     {{ "%.1f"|format(ns.total_used) }} <span class="small text-muted">/ {{ "%.0f"|format(ns.total_limit) }} GiB</span>
                 </div>
@@ -158,7 +158,7 @@
                     {% else %}
                         <span class="badge bg-warning-subtle"><i class="fas fa-power-off"></i> خاموش</span>
                     {% endif %}
-                    <div class="small font-mono text-gold mt-1">{{ "%.2f"|format(usage_gib) }} / {{ "%.0f"|format(limit_gib) }} GiB</div>
+                    <div class="small font-mono text-gold mt-1">مصرف دانلود: {{ "%.2f"|format(usage_gib) }} / {{ "%.0f"|format(limit_gib) }} GiB</div>
                 </div>
             </div>
 

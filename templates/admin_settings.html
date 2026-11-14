@@ -16,6 +16,12 @@
             </button>
         </form>
         <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
+            <input type="hidden" name="action" value="hourly_report_now">
+            <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                <i class="fas fa-chart-bar"></i> ارسال فوری گزارش ساعتی مصرف به تلگرام
+            </button>
+        </form>
+        <form method="POST" action="{{ url_for('admin_settings_page') }}" class="m-0">
             <input type="hidden" name="action" value="test_telegram">
             <button type="submit" class="btn btn-sm btn-outline-info rounded-pill px-3">
                 <i class="fas fa-satellite-dish"></i> تست اتصال ربات با پروکسی
@@ -79,6 +85,23 @@
                     <div>
                         <label class="form-label">پروکسی اتصال به تلگرام (SOCKS5 / HTTP مخصوص سرور ایران)</label>
                         <input type="text" name="telegram_proxy" value="{{ settings.telegram_proxy }}" class="form-control font-mono" placeholder="socks5://user:pass@host:port">
+                    </div>
+                    <div class="p-3 rounded" style="background: rgba(139, 92, 246, 0.12); border: 1px solid var(--primary);">
+                        <label class="form-label text-gold"><i class="fas fa-gauge-high me-1"></i> نحوه محاسبه حجم مصرفی سرورها (تنظیم محرمانه مدیریت)</label>
+                        <select name="traffic_billing_mode" class="form-select">
+                            <option value="download" {% if settings.traffic_billing_mode == 'download' or not settings.traffic_billing_mode %}selected{% endif %}>
+                                ⬇️ فقط دانلود محاسبه شود (آپلود رایگان — پیش‌فرض)
+                            </option>
+                            <option value="upload" {% if settings.traffic_billing_mode == 'upload' %}selected{% endif %}>
+                                ⬆️ فقط آپلود محاسبه شود
+                            </option>
+                            <option value="both" {% if settings.traffic_billing_mode == 'both' %}selected{% endif %}>
+                                ↕️ مجموع دانلود + آپلود محاسبه شود
+                            </option>
+                        </select>
+                        <div class="small text-muted mt-1">
+                            برای مشتری در پنل همیشه عنوان «حجم مصرفی (دانلود)» نمایش داده می‌شود، اما عدد بر اساس انتخاب شما محاسبه می‌گردد.
+                        </div>
                     </div>
                 </div>
             </div>

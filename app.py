@@ -124,18 +124,87 @@ def detect_iface(ssh) -> str:
         return "ens34"
 
 
-def build_vnstat_monthly_cmd(nic: str, reset_date: str | None) -> str:
+def build_vnstat_monthly_cmd(nic: str, reset_date: str | None, billing_mode: str = "download") -> str:
     safe_nic = nic if IFACE_RE.match(nic or "") else "ens34"
+    # vnstat -m output columns: YYYY-MM | rx | unit | tx | unit | total | unit
+    # $3=rx_val, $4=rx_unit, $6=tx_val, $7=tx_unit, $9=total_val, $10=total_unit (or standard $8/$9)
+    if billing_mode == "download":
+        val_expr = '{if ($4 == "TiB") sum += $3 * 1024; else if ($4 == "MiB") sum += $3 / 1024.0; else sum += $3}'
+    elif billing_mode == "upload":
+        val_expr = '{if ($7 == "TiB") sum += $6 * 1024; else if ($7 == "MiB") sum += $6 / 1024.0; else sum += $6}'
+    else:
+        val_expr = '{if ($9 == "TiB") sum += $8 * 1024; else sum += $8}'
+
     if reset_date and RESET_DATE_RE.match(str(reset_date).strip()):
         clean_date = str(reset_date).strip()
-        return (
-            f"vnstat -m -i {safe_nic} | awk '/[0-9]{{4}}-[0-9]{{2}}/ && $1 >= \"{clean_date}\" && !/estimated/ "
-            "{if ($9 == \"TiB\") sum += $8 * 1024; else sum += $8} END {print sum ? sum : 0}'"
-        )
-    return (
-        f"vnstat -m -i {safe_nic} | awk '/[0-9]{{4}}-[0-9]{{2}}/ && !/estimated/ "
-        "{if ($9 == \"TiB\") sum += $8 * 1024; else sum += $8} END {print sum ? sum : 0}'"
-    )
+        return f"vnstat -m -i {safe_nic} | awk '/[0-9]{{4}}-[0-9]{{2}}/ && $1 >= \"{clean_date}\" && !/estimated/ {val_expr} END {{print sum ? sum : 0}}'"
+    return f"vnstat -m -i {safe_nic} | awk '/[0-9]{{4}}-[0-9]{{2}}/ && !/estimated/ {val_expr} END {{print sum ? sum : 0}}'"
+
+
+def get_local_host_download_gib() -> float:
+    """Reads Download (RX) bytes directly from the main panel server's /proc/net/dev (excludes loopback)."""
+    try:
+        total_rx = 0
+        with open("/proc/net/dev", "r", encoding="utf-8") as f:
+            for line in f.readlines()[2:]:
+                if ":" not in line:
+                    continue
+                iface, rest = line.split(":", 1)
+                if iface.strip() == "lo":
+                    continue
+                cols = rest.split()
+                if cols:
+                    total_rx += int(cols[0])
+        return round(total_rx / (1024.0 ** 3), 2)
+    except Exception:
+        return 0.0
+
+
+def send_hourly_traffic_report_to_admin() -> tuple[bool, str]:
+    """Builds and sends the hourly Download/Usage report for Main Server + ESXi Hosts to Admin Telegram."""
+    cfg = get_system_settings()
+    admin_chat = (cfg.get("admin_chat_id") or "").strip()
+    if not admin_chat or admin_chat == "YOUR_CHAT_ID":
+        return False, "چت‌آیدی مدیر در تنظیمات ثبت نشده است."
+
+    main_dl_gib = get_local_host_download_gib()
+    mode = cfg.get("traffic_billing_mode", "download")
+    mode_fa = {"download": "فقط دانلود (آپلود رایگان)", "upload": "فقط آپلود", "both": "دانلود + آپلود"}.get(mode, "فقط دانلود")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, name, ip FROM esxi_hosts ORDER BY id ASC")
+    hosts = c.fetchall()
+
+    lines = [
+        "📊 *گزارش ساعتی مصرف حجم کلود کیوب*",
+        f"⚙️ *معیار محاسبه فعلی:* {mode_fa}",
+        f"🖥️ *سرور اصلی پنل (دانلود کل):* `{main_dl_gib:.2f} GiB`",
+        "",
+    ]
+
+    total_esxi_all = 0.0
+    for hid, hname, hip in hosts:
+        c.execute("SELECT COALESCE(SUM(traffic_usage), 0), COUNT(*) FROM servers WHERE esxi_host_id=? AND active=1", (hid,))
+        hr = c.fetchone()
+        h_sum = float(hr[0] or 0.0) if hr else 0.0
+        h_cnt = int(hr[1] or 0) if hr else 0
+        total_esxi_all += h_sum
+        lines.append(f"🏢 *هاست ESXi ({hname} - {hip}):* `{h_sum:.2f} GiB` ({h_cnt} سرور)")
+
+    c.execute("SELECT COALESCE(SUM(traffic_usage), 0), COUNT(*) FROM servers WHERE esxi_host_id IS NULL AND active=1")
+    non_esxi = c.fetchone()
+    if non_esxi and int(non_esxi[1] or 0) > 0:
+        lines.append(f"🌐 *سرورهای مستقل:* `{float(non_esxi[0] or 0.0):.2f} GiB` ({non_esxi[1]} سرور)")
+
+    lines.append(f"\n📈 *مجموع کل مصرف سرورهای مجازی:* `{(total_esxi_all + float((non_esxi[0] if non_esxi else 0) or 0)):.2f} GiB`")
+    conn.close()
+
+    res = tg_api_request("sendMessage", data={"chat_id": admin_chat, "text": "\n".join(lines), "parse_mode": "Markdown"})
+    if res.get("ok"):
+        set_system_setting("last_hourly_traffic_report_at", datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
+        return True, "گزارش ساعتی مصرف حجم با موفقیت به تلگرام مدیر ارسال شد."
+    return False, f"خطا در ارسال گزارش تلگرام: {res.get('description', 'نامشخص')}"
 
 
 def get_db_connection():
@@ -377,6 +446,8 @@ def init_db():
         ("max_ram_gb_pool", "64", now_init),
         ("max_disk_gb_pool", "1000", now_init),
         ("last_db_backup_at", "", now_init),
+        ("traffic_billing_mode", "download", now_init),
+        ("last_hourly_traffic_report_at", "", now_init),
     ]
     for sk, sv, st in default_settings:
         c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
@@ -405,6 +476,8 @@ def init_db():
         ("monthly_price", "INTEGER DEFAULT 0"),
         ("os_name", "TEXT DEFAULT 'Ubuntu 22.04 LTS'"),
         ("template_vmdk", "TEXT DEFAULT NULL"),
+        ("last_esxi_rx_bytes", "INTEGER DEFAULT 0"),
+        ("last_esxi_tx_bytes", "INTEGER DEFAULT 0"),
     ]
     for col_name, col_type in needed_cols:
         if col_name not in cols:
@@ -862,6 +935,8 @@ def get_system_settings() -> dict:
         "max_cpu_pool": "64",
         "max_ram_gb_pool": "64",
         "max_disk_gb_pool": "1000",
+        "traffic_billing_mode": "download",
+        "last_hourly_traffic_report_at": "",
     }
     try:
         conn = get_db_connection()
@@ -3304,11 +3379,18 @@ def admin_settings_page():
                 "telegram_bot_token",
                 "admin_chat_id",
                 "telegram_proxy",
+                "traffic_billing_mode",
             ]
             for f_key in fields:
                 if f_key in request.form:
                     set_system_setting(f_key, request.form.get(f_key, ""))
             msg = "تنظیمات درگاه کارت‌به‌کارت، ربات تلگرام و پروکسی با موفقیت ذخیره و به صورت زنده اعمال شد."
+        elif action == "hourly_report_now":
+            ok_hr, msg_hr = send_hourly_traffic_report_to_admin()
+            if ok_hr:
+                msg = msg_hr
+            else:
+                err = msg_hr
         elif action == "backup_now":
             ok_bk, msg_bk = send_database_backup_to_owner(force=True)
             if ok_bk:
@@ -4940,7 +5022,8 @@ def monitor_servers():
         c = conn.cursor()
         c.execute(
             """SELECT s.id, s.ip, s.username, s.password, s.traffic_limit, s.telegram_chat_id, s.traffic_usage,
-                      s.reset_date, s.name, s.esxi_host_id, s.vmid, s.is_suspended,
+                      s.reset_date, s.name, s.esxi_host_id, s.vmid, s.vm_name, s.is_suspended,
+                      COALESCE(s.last_esxi_rx_bytes, 0), COALESCE(s.last_esxi_tx_bytes, 0),
                       h.ip, h.port, h.username, h.password
                FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.active=1"""
         )
@@ -4949,6 +5032,7 @@ def monitor_servers():
 
         cfg = get_system_settings()
         admin_chat = (cfg.get("admin_chat_id") or "").strip()
+        billing_mode = cfg.get("traffic_billing_mode", "download")
 
         for server in servers:
             (
@@ -4963,26 +5047,57 @@ def monitor_servers():
                 name,
                 esxi_host_id,
                 vmid,
+                vm_name,
                 is_suspended,
+                last_rx_bytes,
+                last_tx_bytes,
                 esxi_ip,
                 esxi_port,
                 esxi_user,
                 esxi_pass,
             ) = server
             traffic_limit = float(traffic_limit or 0.0)
-            time.sleep(random.uniform(0.5, 2.0))
+            curr_usage_gib = float(traffic_usage or 0.0)
+            time.sleep(random.uniform(0.3, 1.2))
             conn = get_db_connection()
             c = conn.cursor()
+            ssh = None
             try:
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(ip, username=username, password=password, timeout=10)
-                nic = detect_iface(ssh)
-                traffic_cmd = build_vnstat_monthly_cmd(nic, reset_date)
-                _, stdout, _ = ssh.exec_command(traffic_cmd)
-                traffic_usage_output = stdout.read().decode().strip()
-                traffic_usage_new = float(traffic_usage_output.splitlines()[-1]) if traffic_usage_output else 0.0
                 now_iso = datetime.datetime.utcnow().isoformat()
+                traffic_usage_new = curr_usage_gib
+
+                # 1. Preferred: ESXi-Level Direct vSwitch Reading (Zero Guest SSH Dependency!)
+                if esxi_host_id and esxi_ip and (vm_name or name):
+                    ok_esxi, dl_bytes, ul_bytes, _ = esxi_manager.get_vm_network_stats_on_esxi(
+                        esxi_ip, esxi_port, esxi_user, esxi_pass, vm_name or name
+                    )
+                    if ok_esxi:
+                        # Handle VM reboot counter reset via Delta Accumulator
+                        delta_dl = (dl_bytes - last_rx_bytes) if dl_bytes >= last_rx_bytes else dl_bytes
+                        delta_ul = (ul_bytes - last_tx_bytes) if ul_bytes >= last_tx_bytes else ul_bytes
+
+                        if billing_mode == "download":
+                            delta_bytes = max(0, delta_dl)
+                        elif billing_mode == "upload":
+                            delta_bytes = max(0, delta_ul)
+                        else:
+                            delta_bytes = max(0, delta_dl + delta_ul)
+
+                        traffic_usage_new = round(curr_usage_gib + (delta_bytes / (1024.0 ** 3)), 4)
+                        c.execute(
+                            "UPDATE servers SET last_esxi_rx_bytes=?, last_esxi_tx_bytes=? WHERE id=?",
+                            (dl_bytes, ul_bytes, server_id),
+                        )
+                else:
+                    # 2. Fallback for non-ESXi manual servers: Guest SSH vnstat
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(ip, username=username, password=password, timeout=10)
+                    nic = detect_iface(ssh)
+                    traffic_cmd = build_vnstat_monthly_cmd(nic, reset_date, billing_mode=billing_mode)
+                    _, stdout, _ = ssh.exec_command(traffic_cmd)
+                    traffic_usage_output = stdout.read().decode().strip()
+                    traffic_usage_new = float(traffic_usage_output.splitlines()[-1]) if traffic_usage_output else curr_usage_gib
 
                 c.execute(
                     "UPDATE servers SET traffic_usage=?, updated_at=? WHERE id=?",
@@ -5011,7 +5126,7 @@ def monitor_servers():
                             send_telegram_alert(telegram_chat_id, msg)
                         if admin_chat:
                             send_telegram_alert(admin_chat, msg)
-                    elif not is_suspended:
+                    elif not is_suspended and ssh is not None:
                         ssh.exec_command("sudo shutdown -h now")
 
                 elif is_suspended and traffic_usage_new <= traffic_limit and esxi_host_id and vmid and esxi_ip:
@@ -5026,7 +5141,8 @@ def monitor_servers():
                     if telegram_chat_id:
                         send_telegram_alert(telegram_chat_id, msg)
 
-                ssh.close()
+                if ssh is not None:
+                    ssh.close()
             except Exception as e:
                 logging.error(f"Error monitoring {ip}: {e}")
             finally:
@@ -5060,6 +5176,22 @@ def daily_lifecycle_and_backup_worker():
 
             if due_for_backup:
                 send_database_backup_to_owner(force=False)
+
+            # 1b. Check 1-hour (3600s) Main Server + ESXi Hosts Traffic Report
+            last_hr_str = (cfg.get("last_hourly_traffic_report_at") or "").strip()
+            due_for_hourly = False
+            if not last_hr_str:
+                due_for_hourly = True
+            else:
+                try:
+                    last_hr_dt = datetime.datetime.strptime(last_hr_str, "%Y-%m-%d %H:%M:%S")
+                    if (datetime.datetime.utcnow() - last_hr_dt).total_seconds() >= 3600:
+                        due_for_hourly = True
+                except Exception:
+                    due_for_hourly = True
+
+            if due_for_hourly:
+                send_hourly_traffic_report_to_admin()
 
             # 2. Check Server Expiration (3-day warning + Auto-Suspend on expiry)
             today_date = datetime.datetime.utcnow().date()

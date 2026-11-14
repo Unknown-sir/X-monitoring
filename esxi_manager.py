@@ -729,3 +729,74 @@ def expand_linux_partition_via_ssh(
             last_err = str(e)
             time.sleep(delay_sec)
     return False, f"اتصال SSH پس از ارتقا برقرار نشد: {last_err}"
+
+
+# ==============================================================================
+# ESXi-Level vNIC Traffic Monitoring (No Guest SSH / Password Needed!)
+# ==============================================================================
+def get_vm_network_stats_on_esxi(
+    esxi_host: str,
+    esxi_port: int,
+    esxi_user: str,
+    esxi_password: str,
+    vm_name: str,
+) -> Tuple[bool, int, int, str]:
+    """
+    Reads live VM network counters directly from the ESXi virtual switch via `esxcli`.
+    On ESXi virtual switch ports:
+      - `Bytes Tx` (switch -> VM) is the VM's Download traffic.
+      - `Bytes Rx` (VM -> switch) is the VM's Upload traffic.
+    Returns (success, download_bytes, upload_bytes, message).
+    """
+    clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", (vm_name or "").strip())
+    if not clean_name and not vm_name:
+        return False, 0, 0, "نام ماشین مجازی مشخص نیست."
+
+    try:
+        ssh = get_ssh_client(esxi_host, esxi_port, esxi_user, esxi_password, timeout=10)
+        # Find World ID matching either exact vm_name or sanitized clean_name
+        _, stdout, _ = ssh.exec_command("esxcli network vm list")
+        vm_list_out = stdout.read().decode("utf-8", errors="ignore")
+
+        world_id = None
+        for line in vm_list_out.splitlines():
+            parts = line.strip().split()
+            if len(parts) >= 2 and parts[0].isdigit():
+                row_name = parts[1]
+                if row_name == vm_name or row_name == clean_name:
+                    world_id = parts[0]
+                    break
+
+        if not world_id:
+            ssh.close()
+            return False, 0, 0, "ماشین مجازی در لیست شبکه ESXi فعال نیست (احتمالاً خاموش است)."
+
+        _, stdout, _ = ssh.exec_command(f"esxcli network vm port list -w {world_id}")
+        port_list_out = stdout.read().decode("utf-8", errors="ignore")
+
+        port_ids = []
+        for line in port_list_out.splitlines():
+            m = re.search(r"Port ID:\s*(\d+)", line)
+            if m:
+                port_ids.append(m.group(1))
+
+        if not port_ids:
+            ssh.close()
+            return False, 0, 0, "پورت شبکه مجازی برای این VM یافت نشد."
+
+        total_dl_bytes = 0
+        total_ul_bytes = 0
+        for pid in port_ids:
+            _, stdout, _ = ssh.exec_command(f"esxcli network port stats get -p {pid}")
+            stats_out = stdout.read().decode("utf-8", errors="ignore")
+            tx_m = re.search(r"Bytes Tx:\s*(\d+)", stats_out)
+            rx_m = re.search(r"Bytes Rx:\s*(\d+)", stats_out)
+            if tx_m:
+                total_dl_bytes += int(tx_m.group(1))
+            if rx_m:
+                total_ul_bytes += int(rx_m.group(1))
+
+        ssh.close()
+        return True, total_dl_bytes, total_ul_bytes, "OK"
+    except Exception as e:
+        return False, 0, 0, str(e)
