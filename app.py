@@ -13,6 +13,8 @@ import requests
 import smtplib
 import sqlite3
 import subprocess
+import shutil
+import uuid
 import threading
 import time
 from email.mime.text import MIMEText
@@ -32,6 +34,11 @@ import esxi_manager
 load_dotenv()
 
 app = Flask(__name__)
+try:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+except Exception:
+    pass
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 RECEIPT_UPLOAD_DIR = os.path.join("static", "uploads", "receipts")
 os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
@@ -402,6 +409,28 @@ def init_db():
             except Exception:
                 pass
     c.execute(
+        """CREATE TABLE IF NOT EXISTS live_chat_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_token TEXT UNIQUE NOT NULL,
+            user_id INTEGER DEFAULT NULL,
+            visitor_name TEXT NOT NULL,
+            visitor_contact TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS live_chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            sender TEXT NOT NULL DEFAULT 'user',
+            sender_name TEXT DEFAULT NULL,
+            message_text TEXT NOT NULL,
+            tg_message_id INTEGER DEFAULT NULL,
+            created_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
         """CREATE TABLE IF NOT EXISTS system_settings (
             key TEXT PRIMARY KEY,
             value TEXT,
@@ -507,6 +536,7 @@ def init_db():
         ("kyc_required", "INTEGER DEFAULT 0"),        # 0 = optional, 1 = mandatory for this user
         ("kyc_reject_reason", "TEXT DEFAULT NULL"),
         ("kyc_submitted_at", "TEXT DEFAULT NULL"),
+        ("gender", "TEXT DEFAULT NULL"),
     ]:
         if k_col not in ucols:
             try:
@@ -1835,10 +1865,16 @@ def login():
 def register():
     error_msg = None
     if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        gender = request.form.get("gender", "male").strip()
+        if gender not in ("male", "female"):
+            gender = "male"
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
         telegram_chat_id = request.form.get("telegram_chat_id", "").strip()
-        if len(username) < 3 or len(password) < 4:
+        if len(full_name) < 3:
+            error_msg = "لطفاً نام و نام خانوادگی خود را به صورت کامل وارد کنید."
+        elif len(username) < 3 or len(password) < 4:
             error_msg = "نام کاربری باید حداقل ۳ کاراکتر و رمز عبور حداقل ۴ کاراکتر باشد."
         else:
             conn = get_db_connection()
@@ -1849,8 +1885,9 @@ def register():
                 error_msg = "این نام کاربری قبلاً ثبت شده است."
             else:
                 c.execute(
-                    "INSERT INTO users (username, password, role, telegram_chat_id, active, wallet_balance) VALUES (?, ?, 'user', ?, 1, 0)",
-                    (username, generate_password_hash(password), telegram_chat_id),
+                    "INSERT INTO users (username, password, role, telegram_chat_id, active, wallet_balance, full_name, gender) "
+                    "VALUES (?, ?, 'user', ?, 1, 0, ?, ?)",
+                    (username, generate_password_hash(password), telegram_chat_id, full_name, gender),
                 )
                 uid = c.lastrowid
                 conn.commit()
@@ -3363,6 +3400,412 @@ def admin_decide_payment(req_id):
     return redirect(url_for("admin_payments_page", err=message))
 
 
+
+
+def setup_domain_nginx_ssl(domain: str, ssl_email: str = "") -> tuple[bool, str]:
+    """Configures Nginx Reverse Proxy on port 80/443 (no port in URL) and obtains Let's Encrypt SSL via Certbot."""
+    domain = (domain or "").strip().lower()
+    domain = re.sub(r"^https?://", "", domain).split("/")[0].split(":")[0].strip()
+    if not re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", domain):
+        return False, "فرمت دامنه وارد شده معتبر نیست (مثال صحیح: panel.example.com)."
+
+    ssl_email = (ssl_email or "").strip()
+    if not ssl_email or "@" not in ssl_email:
+        ssl_email = f"admin@{domain}"
+
+    panel_port = int(os.getenv("PORT", "5000"))
+    logs = []
+
+    try:
+        # 1. Ensure nginx & certbot are installed
+        if not shutil.which("nginx") or not shutil.which("certbot"):
+            if shutil.which("apt-get"):
+                inst = subprocess.run(
+                    ["bash", "-lc", "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx certbot python3-certbot-nginx"],
+                    capture_output=True, text=True, timeout=180
+                )
+                logs.append(inst.stdout + inst.stderr)
+            elif shutil.which("dnf") or shutil.which("yum"):
+                pm = "dnf" if shutil.which("dnf") else "yum"
+                inst = subprocess.run(
+                    ["bash", "-lc", f"{pm} install -y -q nginx certbot python3-certbot-nginx"],
+                    capture_output=True, text=True, timeout=180
+                )
+                logs.append(inst.stdout + inst.stderr)
+
+        if not shutil.which("nginx"):
+            return False, "وب‌سرور Nginx روی سرور نصب نشد. لطفاً به صورت دستی nginx و certbot را نصب کنید."
+
+        # 2. Write Nginx Reverse Proxy config
+        nginx_conf = f"""server {{
+    listen 80;
+    listen [::]:80;
+    server_name {domain};
+
+    client_max_body_size 50M;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 60s;
+    }}
+}}
+"""
+        sites_avail = Path("/etc/nginx/sites-available")
+        sites_enabled = Path("/etc/nginx/sites-enabled")
+        if sites_avail.exists() and sites_enabled.exists():
+            conf_file = sites_avail / "cloudcube.conf"
+            conf_file.write_text(nginx_conf, encoding="utf-8")
+            link_file = sites_enabled / "cloudcube.conf"
+            if link_file.exists() or link_file.is_symlink():
+                link_file.unlink()
+            link_file.symlink_to(conf_file)
+        else:
+            conf_file = Path("/etc/nginx/conf.d/cloudcube.conf")
+            conf_file.write_text(nginx_conf, encoding="utf-8")
+
+        # 3. Test & reload Nginx
+        test_res = subprocess.run(["nginx", "-t"], capture_output=True, text=True, timeout=20)
+        logs.append(test_res.stdout + test_res.stderr)
+        if test_res.returncode != 0:
+            set_system_setting("panel_domain", domain)
+            set_system_setting("panel_ssl_email", ssl_email)
+            set_system_setting("panel_ssl_status", "خطا در کانفیگ Nginx")
+            set_system_setting("panel_ssl_log", "\n".join(logs)[-3000:])
+            return False, f"خطا در تست پیکربندی Nginx: {test_res.stderr.strip()}"
+
+        subprocess.run(["bash", "-lc", "systemctl enable nginx >/dev/null 2>&1 || true; systemctl reload nginx || systemctl restart nginx"], capture_output=True, text=True, timeout=25)
+
+        if shutil.which("ufw"):
+            subprocess.run(["bash", "-lc", "ufw allow 80/tcp >/dev/null 2>&1; ufw allow 443/tcp >/dev/null 2>&1 || true"], capture_output=True, text=True, timeout=15)
+
+        # 4. Run Certbot for automatic SSL + HTTPS redirect
+        cert_cmd = [
+            "certbot", "--nginx",
+            "-d", domain,
+            "--non-interactive",
+            "--agree-tos",
+            "--email", ssl_email,
+            "--redirect",
+        ]
+        cert_res = subprocess.run(cert_cmd, capture_output=True, text=True, timeout=120)
+        logs.append(cert_res.stdout + cert_res.stderr)
+
+        set_system_setting("panel_domain", domain)
+        set_system_setting("panel_ssl_email", ssl_email)
+        set_system_setting("panel_ssl_log", "\n".join(logs)[-3500:])
+
+        if cert_res.returncode == 0:
+            set_system_setting("panel_ssl_status", f"فعال (HTTPS روی {domain})")
+            return True, f"✅ دامنه {domain} با موفقیت روی ریورس‌پروکسی Nginx تنظیم شد و گواهی SSL خودکار فعال گردید! اکنون می‌توانید بدون وارد کردن پورت از آدرس https://{domain} وارد پنل شوید."
+        else:
+            set_system_setting("panel_ssl_status", "Nginx فعال (دریافت SSL ناموفق — DNS را بررسی کنید)")
+            err_tail = (cert_res.stderr or cert_res.stdout or "خطای نامشخص").strip()[-400:]
+            return False, f"ریورس‌پروکسی Nginx برای {domain} تنظیم شد، اما دریافت گواهی SSL با خطا مواجه شد (مطمئن شوید رکورد A دامنه به IP سرور متصل است): {err_tail}"
+    except Exception as ex:
+        set_system_setting("panel_ssl_status", "خطا در اجرا")
+        set_system_setting("panel_ssl_log", str(ex))
+        return False, f"خطا در پیکربندی دامنه و SSL: {ex}"
+
+
+
+@app.route("/api/live_chat/send", methods=["POST"])
+def api_live_chat_send():
+    data = request.get_json(silent=True) or {}
+    msg_text = (data.get("message") or "").strip()
+    if not msg_text:
+        return jsonify({"ok": False, "error": "متن پیام نمی‌تواند خالی باشد."}), 400
+    if len(msg_text) > 2000:
+        msg_text = msg_text[:2000]
+
+    token = (data.get("session_token") or "").strip()
+    if not token or len(token) > 80:
+        token = uuid.uuid4().hex
+
+    user_id = session.get("user_id")
+    if user_id:
+        v_name = (session.get("full_name") or session.get("username") or "کاربر پنل").strip()
+        v_contact = (data.get("visitor_contact") or f"User: {session.get('username', '')}").strip()
+    else:
+        v_name = (data.get("visitor_name") or "مهمان سایت").strip()[:60]
+        v_contact = (data.get("visitor_contact") or "").strip()[:80]
+
+    now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, visitor_name, visitor_contact FROM live_chat_sessions WHERE session_token=?", (token,))
+    srow = c.fetchone()
+    if srow:
+        sess_id = srow[0]
+        c.execute(
+            "UPDATE live_chat_sessions SET updated_at=?, user_id=COALESCE(user_id, ?), visitor_name=?, visitor_contact=COALESCE(NULLIF(?, ''), visitor_contact) WHERE id=?",
+            (now_iso, user_id, v_name, v_contact, sess_id),
+        )
+    else:
+        c.execute(
+            "INSERT INTO live_chat_sessions (session_token, user_id, visitor_name, visitor_contact, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (token, user_id, v_name, v_contact, now_iso, now_iso),
+        )
+        sess_id = c.lastrowid
+
+    c.execute(
+        "INSERT INTO live_chat_messages (session_id, sender, sender_name, message_text, created_at) VALUES (?, 'user', ?, ?, ?)",
+        (sess_id, v_name, msg_text, now_iso),
+    )
+    msg_id = c.lastrowid
+    conn.commit()
+
+    # Forward message to Telegram Support Group (or fallback to admin_chat_id)
+    cfg = get_system_settings()
+    target_group = (cfg.get("support_group_chat_id") or "").strip() or (cfg.get("admin_chat_id") or "").strip()
+    if target_group:
+        tg_text = (
+            f"💬 پیام جدید چت آنلاین سایت [#CHAT-{sess_id}]\n"
+            f"👤 نام: {v_name}\n"
+            f"📱 تماس/شناسه: {v_contact or 'ثبت نشده'}\n"
+            f"───────────────\n"
+            f"{msg_text}\n"
+            f"───────────────\n"
+            f"↩️ برای پاسخ به مشتری، مستقیم روی همین پیام Reply کنید."
+        )
+        tg_res = tg_api_request("sendMessage", data={"chat_id": target_group, "text": tg_text})
+        if tg_res.get("ok") and tg_res.get("result", {}).get("message_id"):
+            tg_mid = int(tg_res["result"]["message_id"])
+            c.execute("UPDATE live_chat_messages SET tg_message_id=? WHERE id=?", (tg_mid, msg_id))
+            conn.commit()
+
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "session_token": token,
+        "session_id": sess_id,
+        "message": {
+            "id": msg_id,
+            "sender": "user",
+            "sender_name": v_name,
+            "message_text": msg_text,
+            "created_at": now_iso,
+        },
+    })
+
+
+@app.route("/api/live_chat/messages", methods=["GET"])
+def api_live_chat_messages():
+    token = (request.args.get("token") or "").strip()
+    after_id = int(request.args.get("after_id", 0) or 0)
+    if not token:
+        return jsonify({"ok": True, "messages": []})
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id FROM live_chat_sessions WHERE session_token=?", (token,))
+    srow = c.fetchone()
+    if not srow:
+        conn.close()
+        return jsonify({"ok": True, "messages": []})
+    sess_id = srow[0]
+    c.execute(
+        "SELECT id, sender, sender_name, message_text, created_at FROM live_chat_messages WHERE session_id=? AND id>? ORDER BY id ASC LIMIT 100",
+        (sess_id, after_id),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "messages": [
+            {
+                "id": r[0],
+                "sender": r[1],
+                "sender_name": r[2] or ("پشتیبانی کلود کیوب" if r[1] == "admin" else "شما"),
+                "message_text": r[3],
+                "created_at": r[4],
+            }
+            for r in rows
+        ],
+    })
+
+
+DOMAIN_SSL_STATE = {
+    "status": "idle",
+    "percent": 0,
+    "step_text": "",
+    "error_simple": "",
+    "domain": "",
+    "log": "",
+}
+
+
+def _simplify_ssl_error(raw_err: str, domain: str) -> str:
+    low = (raw_err or "").lower()
+    if "nxdomain" in low or "dns problem" in low or "no valid a records" in low or "could not resolve" in low:
+        return f"رکورد DNS (A Record) دامنه {domain} هنوز به آی‌پی این سرور متصل نشده است یا تغییر DNS هنوز منتشر نشده است."
+    if "connection refused" in low or "timeout during connect" in low or "firewall" in low:
+        return "پورت ۸۰ یا ۴۴۳ روی سرور یا فایروال (UFW / کلودفلر) بسته است و سرور Let's Encrypt نتوانست به دامنه متصل شود."
+    if "too many certificates" in low or "rate limit" in low:
+        return "محدودیت تعداد درخواست گواهی SSL از Let's Encrypt برای این دامنه موقتاً پر شده است. کمی بعد دوباره تلاش کنید."
+    if "unauthorized" in low or "invalid response" in low:
+        return f"دامنه {domain} به این سرور اشاره نمی‌کند یا پشت پروکسی/کلودفلر (ابر نارنجی) است؛ ابر کلودفلر را موقتاً خاکستری کنید و دوباره بزنید."
+    if "nginx" in low and ("emerg" in low or "syntax" in low or "test failed" in low):
+        return "خطا در پیکربندی وب‌سرور Nginx؛ لطفاً لاگ فنی را بررسی کنید."
+    return f"دریافت گواهی SSL برای {domain} انجام نشد. لطفاً از اتصال دامنه به IP سرور و باز بودن پورت ۸۰ مطمئن شوید."
+
+
+def _run_domain_ssl_job(domain: str, ssl_email: str):
+    global DOMAIN_SSL_STATE
+    logs = []
+    panel_port = int(os.getenv("PORT", "5000"))
+
+    def set_prog(pct: int, step: str, status: str = "running", err_simple: str = ""):
+        DOMAIN_SSL_STATE.update({
+            "status": status,
+            "percent": pct,
+            "step_text": step,
+            "error_simple": err_simple,
+            "domain": domain,
+            "log": "\n".join(logs)[-3500:],
+        })
+
+    try:
+        set_prog(15, "در حال بررسی پیش‌نیازها (Nginx و Certbot)...")
+        if not shutil.which("nginx") or not shutil.which("certbot"):
+            set_prog(28, "در حال نصب خودکار Nginx و Certbot روی سرور...")
+            if shutil.which("apt-get"):
+                inst = subprocess.run(
+                    ["bash", "-lc", "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx certbot python3-certbot-nginx"],
+                    capture_output=True, text=True, timeout=180
+                )
+                logs.append(inst.stdout + inst.stderr)
+            elif shutil.which("dnf") or shutil.which("yum"):
+                pm = "dnf" if shutil.which("dnf") else "yum"
+                inst = subprocess.run(
+                    ["bash", "-lc", f"{pm} install -y -q nginx certbot python3-certbot-nginx"],
+                    capture_output=True, text=True, timeout=180
+                )
+                logs.append(inst.stdout + inst.stderr)
+
+        if not shutil.which("nginx"):
+            set_prog(35, "نصب Nginx ناموفق بود", status="error", err_simple="وب‌سرور Nginx روی سرور نصب نشد. لطفاً دسترسی روت سرور را بررسی کنید.")
+            return
+
+        set_prog(50, f"در حال ساخت تنظیمات ریورس‌پروکسی Nginx برای {domain}...")
+        nginx_conf = f"""server {{
+    listen 80;
+    listen [::]:80;
+    server_name {domain};
+
+    client_max_body_size 50M;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{panel_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 60s;
+    }}
+}}
+"""
+        sites_avail = Path("/etc/nginx/sites-available")
+        sites_enabled = Path("/etc/nginx/sites-enabled")
+        if sites_avail.exists() and sites_enabled.exists():
+            conf_file = sites_avail / "cloudcube.conf"
+            conf_file.write_text(nginx_conf, encoding="utf-8")
+            link_file = sites_enabled / "cloudcube.conf"
+            if link_file.exists() or link_file.is_symlink():
+                link_file.unlink()
+            link_file.symlink_to(conf_file)
+        else:
+            conf_file = Path("/etc/nginx/conf.d/cloudcube.conf")
+            conf_file.write_text(nginx_conf, encoding="utf-8")
+
+        set_prog(65, "در حال تست کانفیگ Nginx و باز کردن پورت‌های 80 و 443...")
+        test_res = subprocess.run(["nginx", "-t"], capture_output=True, text=True, timeout=20)
+        logs.append(test_res.stdout + test_res.stderr)
+        if test_res.returncode != 0:
+            set_system_setting("panel_domain", domain)
+            set_system_setting("panel_ssl_email", ssl_email)
+            set_system_setting("panel_ssl_status", "خطا در کانفیگ Nginx")
+            set_system_setting("panel_ssl_log", "\n".join(logs)[-3000:])
+            set_prog(65, "خطا در پیکربندی Nginx", status="error", err_simple=_simplify_ssl_error(test_res.stderr, domain))
+            return
+
+        subprocess.run(["bash", "-lc", "systemctl enable nginx >/dev/null 2>&1 || true; systemctl reload nginx || systemctl restart nginx"], capture_output=True, text=True, timeout=25)
+        if shutil.which("ufw"):
+            subprocess.run(["bash", "-lc", "ufw allow 80/tcp >/dev/null 2>&1; ufw allow 443/tcp >/dev/null 2>&1 || true"], capture_output=True, text=True, timeout=15)
+
+        set_prog(82, f"در حال دریافت خودکار گواهی SSL (Let's Encrypt) برای {domain}...")
+        cert_cmd = [
+            "certbot", "--nginx",
+            "-d", domain,
+            "--non-interactive",
+            "--agree-tos",
+            "--email", ssl_email,
+            "--redirect",
+        ]
+        cert_res = subprocess.run(cert_cmd, capture_output=True, text=True, timeout=120)
+        logs.append(cert_res.stdout + cert_res.stderr)
+
+        set_system_setting("panel_domain", domain)
+        set_system_setting("panel_ssl_email", ssl_email)
+        set_system_setting("panel_ssl_log", "\n".join(logs)[-3500:])
+
+        if cert_res.returncode == 0:
+            set_system_setting("panel_ssl_status", f"فعال (HTTPS روی {domain})")
+            set_prog(100, f"✅ دامنه {domain} با SSL خودکار فعال شد!", status="success")
+        else:
+            set_system_setting("panel_ssl_status", "Nginx فعال (خطا در دریافت SSL)")
+            simple_err = _simplify_ssl_error(cert_res.stderr + "\n" + cert_res.stdout, domain)
+            set_prog(85, "دریافت گواهی SSL با خطا متوقف شد", status="error", err_simple=simple_err)
+    except Exception as ex:
+        logs.append(str(ex))
+        set_system_setting("panel_ssl_status", "خطا در اجرا")
+        set_system_setting("panel_ssl_log", str(ex))
+        set_prog(0, "خطای سیستمی", status="error", err_simple=f"خطا در اجرای دستور روی سرور: {ex}")
+
+
+@app.route("/api/admin/domain_ssl/start", methods=["POST"])
+def api_domain_ssl_start():
+    if session.get("role") != "owner" and session.get("username") != "marmmr":
+        return jsonify({"ok": False, "error": "این بخش فقط مخصوص مالک (Owner) سیستم است."}), 403
+    data = request.get_json(silent=True) or {}
+    domain = (data.get("panel_domain") or "").strip().lower()
+    domain = re.sub(r"^https?://", "", domain).split("/")[0].split(":")[0].strip()
+    if not re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", domain):
+        return jsonify({"ok": False, "error": "فرمت دامنه وارد شده معتبر نیست (مثال صحیح: panel.example.com)."}), 400
+    ssl_email = (data.get("panel_ssl_email") or "").strip()
+    if not ssl_email or "@" not in ssl_email:
+        ssl_email = f"admin@{domain}"
+    if DOMAIN_SSL_STATE.get("status") == "running":
+        return jsonify({"ok": False, "error": "یک عملیات تنظیم دامنه و SSL هم‌اکنون در حال اجرا است."}), 409
+
+    DOMAIN_SSL_STATE.update({
+        "status": "running",
+        "percent": 5,
+        "step_text": f"شروع پیکربندی دامنه {domain}...",
+        "error_simple": "",
+        "domain": domain,
+        "log": "",
+    })
+    threading.Thread(target=_run_domain_ssl_job, args=(domain, ssl_email), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/domain_ssl/status", methods=["GET"])
+def api_domain_ssl_status():
+    if session.get("role") != "owner" and session.get("username") != "marmmr":
+        return jsonify({"ok": False, "error": "دسترسی غیرمجاز"}), 403
+    return jsonify({"ok": True, **DOMAIN_SSL_STATE})
+
 @app.route("/admin_settings", methods=["GET", "POST"])
 @perm_required("settings_manage")
 def admin_settings_page():
@@ -3380,11 +3823,23 @@ def admin_settings_page():
                 "admin_chat_id",
                 "telegram_proxy",
                 "traffic_billing_mode",
+                "support_group_chat_id",
             ]
             for f_key in fields:
                 if f_key in request.form:
                     set_system_setting(f_key, request.form.get(f_key, ""))
             msg = "تنظیمات درگاه کارت‌به‌کارت، ربات تلگرام و پروکسی با موفقیت ذخیره و به صورت زنده اعمال شد."
+        elif action == "setup_domain_ssl":
+            if session.get("role") != "owner" and session.get("username") != "marmmr":
+                err = "⛔ این بخش فقط مخصوص مالک (Owner) سیستم است."
+            else:
+                dom_in = request.form.get("panel_domain", "")
+                eml_in = request.form.get("panel_ssl_email", "")
+                ok_ssl, msg_ssl = setup_domain_nginx_ssl(dom_in, eml_in)
+                if ok_ssl:
+                    msg = msg_ssl
+                else:
+                    err = msg_ssl
         elif action == "hourly_report_now":
             ok_hr, msg_hr = send_hourly_traffic_report_to_admin()
             if ok_hr:
@@ -4955,6 +5410,107 @@ def _handle_tg_update(upd: dict):
         text = (msg.get("text") or "").strip()
         if not text:
             return
+
+        # Auto-register Support Group with /set-pogroup (or /set_pogroup)
+        if text.startswith("/set-pogroup") or text.startswith("/set_pogroup"):
+            chat_type = msg.get("chat", {}).get("type", "")
+            if chat_type not in ("group", "supergroup"):
+                tg_api_request(
+                    "sendMessage",
+                    data={
+                        "chat_id": chat_id,
+                        "reply_to_message_id": msg.get("message_id"),
+                        "text": "⚠️ این دستور را باید داخل **گروه پشتیبانی** (جایی که ربات ادمین است) ارسال کنید.",
+                        "parse_mode": "Markdown",
+                    },
+                )
+                return
+            sender_id = msg.get("from", {}).get("id")
+            is_grp_admin = False
+            if admin_chat and str(sender_id) == str(admin_chat):
+                is_grp_admin = True
+            elif sender_id:
+                mem_res = tg_api_request("getChatMember", data={"chat_id": chat_id, "user_id": sender_id})
+                mem_status = (mem_res.get("result") or {}).get("status", "")
+                if mem_status in ("creator", "administrator"):
+                    is_grp_admin = True
+            if not is_grp_admin:
+                tg_api_request(
+                    "sendMessage",
+                    data={
+                        "chat_id": chat_id,
+                        "reply_to_message_id": msg.get("message_id"),
+                        "text": "⛔ فقط ادمین‌های گروه یا مدیر کل پنل مجاز به ثبت گروه پشتیبانی هستند.",
+                    },
+                )
+                return
+            set_system_setting("support_group_chat_id", chat_id)
+            grp_title = msg.get("chat", {}).get("title") or "گروه پشتیبانی"
+            tg_api_request(
+                "sendMessage",
+                data={
+                    "chat_id": chat_id,
+                    "reply_to_message_id": msg.get("message_id"),
+                    "text": (
+                        f"✅ گروه *«{grp_title}»* با شناسه `{chat_id}` با موفقیت به عنوان **گروه پشتیبانی آنلاین سایت** ثبت شد!\n\n"
+                        "از این پس پیام‌های چت آنلاین مشتریان مستقیماً به این گروه ارسال می‌شود و با Reply روی هر پیام، پاسخ در چت‌باکس سایت نمایش داده خواهد شد."
+                    ),
+                    "parse_mode": "Markdown",
+                },
+            )
+            return
+
+        # Command to reveal Group/Chat ID for Live Chat setup
+        if text.startswith("/chatid"):
+            tg_api_request(
+                "sendMessage",
+                data={
+                    "chat_id": chat_id,
+                    "reply_to_message_id": msg.get("message_id"),
+                    "text": f"🆔 شناسه عددی این چت/گروه:\n`{chat_id}`\n\nاین شناسه را در بخش «تنظیمات ربات و چت آنلاین» پنل مدیریت وارد کنید.",
+                    "parse_mode": "Markdown",
+                },
+            )
+            return
+
+        # Handle Admin Reply in Telegram Support Group -> Forward to Website Live Chatbox
+        reply_to = msg.get("reply_to_message")
+        if reply_to and not msg.get("from", {}).get("is_bot", False) and not text.startswith("/"):
+            replied_tg_id = reply_to.get("message_id")
+            sess_id = None
+            conn = get_db_connection()
+            c = conn.cursor()
+            if replied_tg_id:
+                c.execute("SELECT session_id FROM live_chat_messages WHERE tg_message_id=? LIMIT 1", (int(replied_tg_id),))
+                r_row = c.fetchone()
+                if r_row:
+                    sess_id = r_row[0]
+            if not sess_id:
+                replied_text = reply_to.get("text") or reply_to.get("caption") or ""
+                m_chat = re.search(r"\[#CHAT-(\d+)\]", replied_text)
+                if m_chat:
+                    sess_id = int(m_chat.group(1))
+            if sess_id:
+                adm_from = msg.get("from", {})
+                adm_name = (f"{adm_from.get('first_name', '')} {adm_from.get('last_name', '')}".strip() or "پشتیبانی کلود کیوب")
+                now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                c.execute(
+                    "INSERT INTO live_chat_messages (session_id, sender, sender_name, message_text, tg_message_id, created_at) VALUES (?, 'admin', ?, ?, ?, ?)",
+                    (sess_id, adm_name, text, msg.get("message_id"), now_iso),
+                )
+                c.execute("UPDATE live_chat_sessions SET updated_at=? WHERE id=?", (now_iso, sess_id))
+                conn.commit()
+                conn.close()
+                tg_api_request(
+                    "sendMessage",
+                    data={
+                        "chat_id": chat_id,
+                        "reply_to_message_id": msg.get("message_id"),
+                        "text": f"✅ پاسخ شما در چت آنلاین سایت برای مشتری (#CHAT-{sess_id}) ثبت شد.",
+                    },
+                )
+                return
+            conn.close()
 
         if text == "/cancel" and chat_id in ADMIN_REJECT_WAIT:
             ADMIN_REJECT_WAIT.pop(chat_id, None)

@@ -1344,3 +1344,263 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
     justify-content: center;
     margin-bottom: 12px;
 }
+
+
+/* ==========================================================================
+   Cloud Cube v10.0 — Luxury Animated Auth (Login & Register)
+   ========================================================================== */
+@keyframes ccShake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-9px) rotate(-0.6deg); }
+    30% { transform: translateX(8px) rotate(0.6deg); }
+    45% { transform: translateX(-6px); }
+    60% { transform: translateX(5px); }
+    75% { transform: translateX(-3px); }
+}
+
+@keyframes errPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.45); }
+    50% { box-shadow: 0 0 22px 2px rgba(244, 63, 94, 0.30); }
+}
+
+.cc-auth-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+}
+
+.cc-auth-split {
+    width: 100%;
+    max-width: 920px;
+    display: grid;
+    grid-template-columns: 1fr;
+    background: linear-gradient(155deg, rgba(24, 24, 54, 0.90) 0%, rgba(15, 15, 36, 0.95) 100%);
+    backdrop-filter: blur(22px);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 26px;
+    overflow: hidden;
+    box-shadow: 0 28px 70px rgba(4, 4, 18, 0.78), 0 0 40px rgba(139, 92, 246, 0.18);
+    position: relative;
+    z-index: 2;
+    animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (min-width: 860px) {
+    .cc-auth-split {
+        grid-template-columns: 1.05fr 0.95fr;
+    }
+}
+
+.cc-auth-split.has-error {
+    animation: ccShake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    border-color: rgba(244, 63, 94, 0.65);
+}
+
+.cc-auth-form-pane {
+    padding: 36px 32px;
+}
+
+.cc-auth-visual-pane {
+    background: linear-gradient(145deg, rgba(109, 40, 217, 0.28) 0%, rgba(17, 17, 39, 0.92) 100%);
+    border-right: 1px solid var(--border-subtle);
+    padding: 36px 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.cc-auth-error-box {
+    background: rgba(244, 63, 94, 0.15);
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    color: #FDA4AF;
+    border-radius: 13px;
+    padding: 12px 15px;
+    font-size: 0.86rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: errPulse 2s infinite;
+}
+
+.cc-input-wrap {
+    position: relative;
+}
+
+.cc-input-wrap .form-control.is-invalid-anim {
+    border-color: #F43F5E !important;
+    box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.22) !important;
+}
+
+.cc-eye-btn {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 6px;
+}
+.cc-eye-btn:hover { color: var(--accent); }
+
+.cc-gender-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.cc-gender-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: rgba(12, 12, 29, 0.65);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cc-gender-card input { display: none; }
+
+.cc-gender-card.active, .cc-gender-card:hover {
+    background: rgba(139, 92, 246, 0.22);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 18px rgba(139, 92, 246, 0.30);
+    transform: translateY(-2px);
+}
+
+
+/* ==========================================================================
+   Cloud Cube v11.0 — Floating Live Chat Widget Connected to Telegram Group
+   ========================================================================== */
+.cc-chat-launcher {
+    position: fixed;
+    left: 24px;
+    bottom: 24px;
+    z-index: 1090;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #8B5CF6 0%, #6D28D9 60%, #38BDF8 100%);
+    color: #fff;
+    border: 1px solid rgba(196, 181, 253, 0.45);
+    box-shadow: 0 12px 32px rgba(109, 40, 217, 0.45), 0 0 18px rgba(56, 189, 248, 0.25);
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.88rem;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+
+.cc-chat-launcher:hover {
+    transform: translateY(-3px) scale(1.03);
+    box-shadow: 0 16px 38px rgba(139, 92, 246, 0.6);
+}
+
+.cc-chat-badge {
+    display: none;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #F43F5E;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    align-items: center;
+    justify-content: center;
+}
+.cc-chat-badge.show { display: inline-flex; }
+
+.cc-chat-drawer {
+    position: fixed;
+    left: 24px;
+    bottom: 84px;
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    height: 490px;
+    max-height: calc(100vh - 110px);
+    z-index: 1095;
+    display: none;
+    flex-direction: column;
+    border-radius: 22px;
+    background: linear-gradient(160deg, rgba(22, 22, 51, 0.96) 0%, rgba(13, 13, 33, 0.98) 100%);
+    backdrop-filter: blur(22px);
+    border: 1px solid rgba(139, 92, 246, 0.38);
+    box-shadow: 0 26px 64px rgba(4, 4, 18, 0.78), 0 0 32px rgba(139, 92, 246, 0.22);
+    overflow: hidden;
+}
+
+.cc-chat-drawer.open {
+    display: flex;
+    animation: fadeUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cc-chat-header {
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.26), rgba(56, 189, 248, 0.14));
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cc-chat-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cc-chat-bubble {
+    max-width: 84%;
+    padding: 10px 14px;
+    border-radius: 15px;
+    font-size: 0.84rem;
+    line-height: 1.55;
+    word-break: break-word;
+    animation: fadeUp 0.22s ease both;
+}
+
+.cc-chat-bubble.user {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+
+.cc-chat-bubble.admin {
+    align-self: flex-end;
+    background: rgba(30, 41, 59, 0.88);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #F7F6FC;
+    border-bottom-left-radius: 4px;
+}
+
+.cc-chat-meta {
+    font-size: 0.68rem;
+    opacity: 0.75;
+    margin-bottom: 3px;
+    display: block;
+}
+
+.cc-chat-footer {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(12, 12, 29, 0.85);
+}

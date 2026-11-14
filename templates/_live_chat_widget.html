@@ -1,0 +1,157 @@
+<button type="button" class="cc-chat-launcher" id="ccChatLauncher" onclick="ccToggleChat()">
+    <span class="pulse-dot"></span>
+    <i class="fas fa-headset"></i>
+    <span>چت آنلاین پشتیبانی</span>
+    <span class="cc-chat-badge" id="ccChatUnread">0</span>
+</button>
+
+<div class="cc-chat-drawer" id="ccChatDrawer" aria-hidden="true">
+    <div class="cc-chat-header">
+        <div class="d-flex align-items-center gap-2">
+            <span class="xm-logo-badge" style="width: 34px; height: 34px; font-size: 0.9rem;"><i class="fas fa-comments"></i></span>
+            <div>
+                <div class="fw-bold" style="font-size: 0.9rem; color: #F7F6FC;">پشتیبانی آنلاین کلود کیوب</div>
+                <div class="small" style="font-size: 0.7rem; color: #38BDF8;">متصل به گروه پشتیبانی تلگرام</div>
+            </div>
+        </div>
+        <button type="button" onclick="ccToggleChat()" style="background: transparent; border: none; color: #94A3B8; font-size: 1.1rem; cursor: pointer;">
+            <i class="fas fa-xmark"></i>
+        </button>
+    </div>
+
+    {% if not session.get('user_id') %}
+    <div id="ccGuestInfoBar" style="padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); background: rgba(15, 15, 36, 0.7); display: flex; gap: 6px;">
+        <input type="text" id="ccVisitorName" class="form-control form-control-sm" placeholder="نام شما..." style="font-size: 0.76rem;">
+        <input type="text" id="ccVisitorContact" class="form-control form-control-sm font-mono" placeholder="موبایل / تلگرام" style="font-size: 0.76rem;">
+    </div>
+    {% endif %}
+
+    <div class="cc-chat-body" id="ccChatBody">
+        <div class="cc-chat-bubble admin">
+            <span class="cc-chat-meta">پشتیبانی کلود کیوب</span>
+            سلام! سوال یا درخواست خود را همینجا بنویسید؛ پیام شما مستقیماً به گروه پشتیبانی تلگرام ارسال می‌شود و پاسخ کارشناسان در همین پنجره نمایش داده خواهد شد.
+        </div>
+    </div>
+
+    <div class="cc-chat-footer">
+        <form onsubmit="ccSendChatMessage(event)" class="d-flex gap-2 align-items-center">
+            <input type="text" id="ccChatInput" class="form-control form-control-sm" placeholder="پیام خود را بنویسید..." autocomplete="off">
+            <button type="submit" id="ccChatSendBtn" class="btn btn-sm btn-primary rounded-pill px-3">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    let ccToken = localStorage.getItem("cc_live_chat_token") || "";
+    let ccLastId = 0;
+    let ccUnread = 0;
+    let ccIsOpen = false;
+
+    const savedName = localStorage.getItem("cc_live_chat_name") || "";
+    const savedContact = localStorage.getItem("cc_live_chat_contact") || "";
+    const nameEl = document.getElementById("ccVisitorName");
+    const contactEl = document.getElementById("ccVisitorContact");
+    if (nameEl && savedName) nameEl.value = savedName;
+    if (contactEl && savedContact) contactEl.value = savedContact;
+
+    window.ccToggleChat = function() {
+        const drawer = document.getElementById("ccChatDrawer");
+        if (!drawer) return;
+        ccIsOpen = !drawer.classList.contains("open");
+        drawer.classList.toggle("open", ccIsOpen);
+        if (ccIsOpen) {
+            ccUnread = 0;
+            const badge = document.getElementById("ccChatUnread");
+            if (badge) { badge.classList.remove("show"); badge.innerText = "0"; }
+            ccPollMessages();
+            setTimeout(() => {
+                const body = document.getElementById("ccChatBody");
+                if (body) body.scrollTop = body.scrollHeight;
+            }, 60);
+        }
+    };
+
+    function appendBubble(m) {
+        const body = document.getElementById("ccChatBody");
+        if (!body || document.getElementById("cc-msg-" + m.id)) return;
+        const div = document.createElement("div");
+        div.id = "cc-msg-" + m.id;
+        div.className = "cc-chat-bubble " + (m.sender === "admin" ? "admin" : "user");
+        const meta = document.createElement("span");
+        meta.className = "cc-chat-meta";
+        meta.innerText = m.sender_name || (m.sender === "admin" ? "پشتیبانی کلود کیوب" : "شما");
+        const txt = document.createElement("div");
+        txt.innerText = m.message_text;
+        div.appendChild(meta);
+        div.appendChild(txt);
+        body.appendChild(div);
+        body.scrollTop = body.scrollHeight;
+    }
+
+    async function ccPollMessages() {
+        if (!ccToken) return;
+        try {
+            const resp = await fetch("/api/live_chat/messages?token=" + encodeURIComponent(ccToken) + "&after_id=" + ccLastId);
+            const data = await resp.json();
+            if (data.ok && Array.isArray(data.messages)) {
+                data.messages.forEach(m => {
+                    appendBubble(m);
+                    if (m.id > ccLastId) ccLastId = m.id;
+                    if (m.sender === "admin" && !ccIsOpen) {
+                        ccUnread++;
+                        const badge = document.getElementById("ccChatUnread");
+                        if (badge) { badge.innerText = String(ccUnread); badge.classList.add("show"); }
+                    }
+                });
+            }
+        } catch (e) {}
+    }
+
+    window.ccSendChatMessage = async function(ev) {
+        ev.preventDefault();
+        const inp = document.getElementById("ccChatInput");
+        const btn = document.getElementById("ccChatSendBtn");
+        if (!inp) return;
+        const msg = inp.value.trim();
+        if (!msg) return;
+
+        const vName = nameEl ? nameEl.value.trim() : "";
+        const vContact = contactEl ? contactEl.value.trim() : "";
+        if (vName) localStorage.setItem("cc_live_chat_name", vName);
+        if (vContact) localStorage.setItem("cc_live_chat_contact", vContact);
+
+        inp.value = "";
+        if (btn) btn.disabled = true;
+        try {
+            const resp = await fetch("/api/live_chat/send", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    session_token: ccToken,
+                    visitor_name: vName || "مهمان سایت",
+                    visitor_contact: vContact,
+                    message: msg
+                })
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                if (data.session_token) {
+                    ccToken = data.session_token;
+                    localStorage.setItem("cc_live_chat_token", ccToken);
+                }
+                if (data.message) {
+                    appendBubble(data.message);
+                    if (data.message.id > ccLastId) ccLastId = data.message.id;
+                }
+            }
+        } catch (e) {}
+        if (btn) btn.disabled = false;
+    };
+
+    if (ccToken) ccPollMessages();
+    setInterval(ccPollMessages, 3500);
+})();
+</script>

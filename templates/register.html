@@ -1,48 +1,148 @@
 {% extends "base.html" %}
-{% block title %}ثبت‌نام | کلود کیوب{% endblock %}
+{% block title %}ثبت‌نام در کلود کیوب | Cloud Cube{% endblock %}
 {% block auth_content %}
-<div class="auth-wrapper">
-    <div class="auth-card">
-        <div class="text-center mb-4">
-            <a href="{{ url_for('landing') }}" class="xm-logo-badge mb-3" style="width: 54px; height: 54px; font-size: 1.4rem;">
-                <i class="fas fa-user-plus"></i>
-            </a>
-            <h1 class="fw-extrabold mb-1" style="font-size: 1.35rem;">ایجاد حساب کاربری</h1>
-            <span class="small text-muted">Cloud Cube Console</span>
+<div class="cc-auth-shell">
+    <div class="cc-cyber-grid-bg"></div>
+
+    <div class="cc-auth-split {% if error_msg %}has-error{% endif %}">
+        <!-- Form Column -->
+        <div class="cc-auth-form-pane">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <a href="{{ url_for('landing') }}" class="d-flex align-items-center gap-2">
+                    <span class="xm-logo-badge"><i class="fas fa-user-plus"></i></span>
+                    <div>
+                        <div class="fw-extrabold" style="font-size: 1.15rem; color: var(--text-main);">ساخت حساب کلود کیوب</div>
+                        <span class="small text-muted font-mono" style="font-size: 0.72rem;">Cloud Cube Registration</span>
+                    </div>
+                </a>
+                <a href="{{ url_for('landing') }}" class="btn btn-sm btn-outline-secondary rounded-pill">
+                    <i class="fas fa-home"></i> صفحه اصلی
+                </a>
+            </div>
+
+            {% if error_msg %}
+            <div class="cc-auth-error-box mb-3" role="alert">
+                <i class="fas fa-circle-exclamation" style="font-size: 1.2rem; color: #F43F5E;"></i>
+                <div>{{ error_msg }}</div>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('register') }}" class="d-flex flex-column gap-3">
+                <div>
+                    <label class="form-label">نام و نام خانوادگی</label>
+                    <input type="text" name="full_name" class="form-control" placeholder="مثلاً علی محمدی" required autofocus>
+                </div>
+
+                <div>
+                    <label class="form-label">جنسیت</label>
+                    <div class="cc-gender-grid">
+                        <label class="cc-gender-card active" onclick="pickGender(this)">
+                            <input type="radio" name="gender" value="male" checked>
+                            <i class="fas fa-mars text-info"></i>
+                            <span>آقا</span>
+                        </label>
+                        <label class="cc-gender-card" onclick="pickGender(this)">
+                            <input type="radio" name="gender" value="female">
+                            <i class="fas fa-venus text-primary"></i>
+                            <span>خانم</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">نام کاربری (انگلیسی)</label>
+                        <input type="text" name="username" class="form-control font-mono" placeholder="ali_dev" required>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">چت‌آیدی تلگرام (اختیاری)</label>
+                        <input type="text" name="telegram_chat_id" class="form-control font-mono" placeholder="123456789">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="form-label d-flex justify-content-between">
+                        <span>رمز عبور</span>
+                        <span id="pwStrengthLbl" class="small text-muted"></span>
+                    </label>
+                    <div class="cc-input-wrap">
+                        <input type="password" id="regPassInput" name="password" class="form-control font-mono" placeholder="حداقل ۴ کاراکتر" style="padding-left: 38px;" oninput="checkPwStrength(this.value)" required>
+                        <button type="button" class="cc-eye-btn" onclick="toggleRegPass(this)">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="progress mt-2" style="height: 5px;">
+                        <div id="pwStrengthBar" class="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 mt-1 rounded-pill">
+                    <i class="fas fa-check-circle"></i>
+                    <span>ایجاد حساب و ورود به پنل</span>
+                </button>
+            </form>
+
+            <div class="text-center mt-3 pt-3 border-top small">
+                قبلاً ثبت‌نام کرده‌اید؟
+                <a href="{{ url_for('login') }}" class="fw-bold text-gold">ورود به حساب</a>
+            </div>
         </div>
 
-        {% if error_msg %}
-        <div class="alert alert-danger d-flex align-items-center gap-2">
-            <i class="fas fa-circle-exclamation"></i>
-            <span>{{ error_msg }}</span>
-        </div>
-        {% endif %}
+        <!-- Visual Showcase Column -->
+        <div class="cc-auth-visual-pane d-none d-lg-flex">
+            <div>
+                <span class="cc-10g-pill mb-3"><span class="pulse-dot"></span> تحویل زیر ۶۰ ثانیه</span>
+                <h2 class="fw-extrabold mb-3" style="font-size: 1.4rem; line-height: 1.5;">
+                    شروع سریع با سرورهای ابری ۱۰ گیگابیت کلود کیوب
+                </h2>
+                <ul class="list-unstyled small text-muted d-flex flex-column gap-2 p-0">
+                    <li><i class="fas fa-check-circle text-success me-2"></i> انتخاب سیستم‌عامل دلخواه هنگام خرید</li>
+                    <li><i class="fas fa-check-circle text-success me-2"></i> ارتقای آنی رم، پردازنده و هارد</li>
+                    <li><i class="fas fa-check-circle text-success me-2"></i> پشتیبانی سریع در پنل و تلگرام</li>
+                </ul>
+            </div>
 
-        <form method="POST" action="{{ url_for('register') }}" class="d-flex flex-column gap-3">
-            <div>
-                <label class="form-label">نام کاربری (انگلیسی)</label>
-                <input type="text" name="username" class="form-control font-mono" placeholder="username" required autofocus>
+            <div class="card p-3 mt-4" style="background: rgba(12, 12, 29, 0.65);">
+                <div class="small text-gold fw-bold mb-1">پیشنهاد ویژه کلود کیوب</div>
+                <div class="small text-muted">سرویس طلایی: 4 Core / 4GB RAM / 2000 GiB Traffic / 10 Gbps</div>
             </div>
-            <div>
-                <label class="form-label">رمز عبور</label>
-                <input type="password" name="password" class="form-control font-mono" placeholder="حداقل ۴ کاراکتر" required>
-            </div>
-            <div>
-                <label class="form-label">چت آیدی عددی تلگرام (اختیاری)</label>
-                <input type="text" name="telegram_chat_id" class="form-control font-mono" placeholder="123456789">
-            </div>
-            <button type="submit" class="btn btn-primary w-100 py-2 mt-1 rounded-pill">
-                <i class="fas fa-check"></i>
-                <span>ثبت‌نام و ورود</span>
-            </button>
-        </form>
-
-        <div class="text-center mt-4 pt-3 border-top small">
-            <div class="mb-2">
-                حساب دارید؟ <a href="{{ url_for('login') }}" class="fw-bold">ورود به پنل</a>
-            </div>
-            <a href="{{ url_for('landing') }}" class="text-muted"><i class="fas fa-arrow-right me-1"></i> صفحه اصلی سایت</a>
         </div>
     </div>
 </div>
+
+<script>
+function pickGender(card) {
+    document.querySelectorAll(".cc-gender-card").forEach(c => c.classList.remove("active"));
+    card.classList.add("active");
+    card.querySelector("input").checked = true;
+}
+
+function toggleRegPass(btn) {
+    const el = document.getElementById("regPassInput");
+    const isPw = el.type === "password";
+    el.type = isPw ? "text" : "password";
+    btn.innerHTML = isPw ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+}
+
+function checkPwStrength(val) {
+    const bar = document.getElementById("pwStrengthBar");
+    const lbl = document.getElementById("pwStrengthLbl");
+    let score = 0;
+    if (val.length >= 4) score += 30;
+    if (val.length >= 8) score += 25;
+    if (/[A-Z]/.test(val) && /[a-z]/.test(val)) score += 25;
+    if (/[0-9!@#$%^&*]/.test(val)) score += 20;
+    bar.style.width = score + "%";
+    if (score < 40) {
+        bar.style.background = "#F43F5E";
+        lbl.innerHTML = '<span class="text-danger">ضعیف</span>';
+    } else if (score < 75) {
+        bar.style.background = "#F59E0B";
+        lbl.innerHTML = '<span class="text-warning">متوسط</span>';
+    } else {
+        bar.style.background = "#10B981";
+        lbl.innerHTML = '<span class="text-success">قوی</span>';
+    }
+}
+</script>
 {% endblock %}
