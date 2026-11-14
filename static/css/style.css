@@ -1209,3 +1209,138 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
 .cc-floating-card {
     animation: floatCard 5.5s ease-in-out infinite;
 }
+
+
+/* ==========================================================================
+   Cloud Cube v9.0 — 10Gbps Animated Cyber Grid, Marquee & Interactive Hero
+   ========================================================================== */
+@keyframes gridScroll {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 48px; }
+}
+
+@keyframes marqueeScroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(50%); }
+}
+
+@keyframes waveDash {
+    0% { stroke-dashoffset: 320; }
+    100% { stroke-dashoffset: 0; }
+}
+
+@keyframes glowOrb {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 0.95; transform: scale(1.08); }
+}
+
+.cc-hero-cyber {
+    position: relative;
+    overflow: hidden;
+    padding: 68px 0 54px;
+}
+
+.cc-cyber-grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(to right, rgba(139, 92, 246, 0.09) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(139, 92, 246, 0.09) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 35%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 35%, transparent 100%);
+    animation: gridScroll 3.5s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.cc-10g-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(139, 92, 246, 0.22), rgba(56, 189, 248, 0.18));
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    color: #E0F2FE;
+    font-size: 0.82rem;
+    font-weight: 700;
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.22);
+}
+
+.cc-os-pill {
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: rgba(12, 12, 29, 0.65);
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cc-os-pill.active, .cc-os-pill:hover {
+    background: rgba(139, 92, 246, 0.28);
+    border-color: var(--primary);
+    color: #fff;
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);
+}
+
+.cc-wave-path {
+    stroke-dasharray: 320;
+    animation: waveDash 3s linear infinite;
+}
+
+.cc-marquee-wrap {
+    overflow: hidden;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(17, 17, 39, 0.7);
+    padding: 14px 0;
+    white-space: nowrap;
+}
+
+.cc-marquee-track {
+    display: inline-flex;
+    gap: 36px;
+    animation: marqueeScroll 22s linear infinite;
+}
+
+.cc-marquee-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+}
+
+.cc-step-card {
+    background: linear-gradient(155deg, rgba(28, 28, 64, 0.88) 0%, rgba(17, 17, 41, 0.94) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 24px 20px;
+    position: relative;
+    height: 100%;
+    transition: all 0.28s ease;
+}
+
+.cc-step-card:hover {
+    transform: translateY(-5px);
+    border-color: #38BDF8;
+    box-shadow: 0 16px 36px -10px rgba(56, 189, 248, 0.25);
+}
+
+.cc-step-num {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #8B5CF6, #38BDF8);
+    color: #fff;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+}
