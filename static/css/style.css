@@ -1117,3 +1117,95 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
     padding: 18px 22px;
     animation: borderGlowPulse 3s infinite;
 }
+
+
+/* ==========================================================================
+   Cloud Cube v8.0 — High-Converting SaaS Landing Page Styles
+   ========================================================================== */
+.cc-trust-strip {
+    background: linear-gradient(90deg, rgba(139, 92, 246, 0.10), rgba(56, 189, 248, 0.08), rgba(139, 92, 246, 0.10));
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 22px 0;
+}
+
+.cc-trust-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.cc-benefit-card {
+    background: linear-gradient(155deg, rgba(28, 28, 64, 0.88) 0%, rgba(17, 17, 41, 0.94) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 24px 20px;
+    height: 100%;
+    transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cc-benefit-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary);
+    box-shadow: 0 18px 38px -10px rgba(139, 92, 246, 0.32);
+}
+
+.cc-faq-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+}
+
+.cc-faq-item:hover {
+    border-color: var(--accent);
+}
+
+.cc-faq-q {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.94rem;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    text-align: right;
+}
+
+.cc-faq-a {
+    display: none;
+    padding: 0 20px 16px;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    line-height: 1.75;
+}
+
+.cc-faq-item.open .cc-faq-a {
+    display: block;
+    animation: fadeUp 0.25s ease both;
+}
+
+.cc-faq-item.open .cc-faq-icon {
+    transform: rotate(180deg);
+}
+
+.cc-cta-banner {
+    background: linear-gradient(135deg, #2e1065 0%, #4c1d95 50%, #1e1b4b 100%);
+    border: 1px solid rgba(167, 139, 250, 0.45);
+    border-radius: 24px;
+    padding: 40px 32px;
+    box-shadow: 0 24px 60px -12px rgba(139, 92, 246, 0.35);
+    position: relative;
+    overflow: hidden;
+}
+
+.cc-floating-card {
+    animation: floatCard 5.5s ease-in-out infinite;
+}

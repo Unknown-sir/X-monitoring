@@ -1690,6 +1690,39 @@ def get_active_plans():
     return plans
 
 
+@app.route("/robots.txt")
+def robots_txt():
+    base_url = request.url_root.rstrip("/")
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Allow: /login\n"
+        "Allow: /register\n"
+        "Disallow: /admin\n"
+        "Disallow: /dashboard\n"
+        "Disallow: /api/\n"
+        f"Sitemap: {base_url}/sitemap.xml\n"
+    )
+    return app.response_class(body, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    base_url = request.url_root.rstrip("/")
+    now_d = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    urls = [
+        (f"{base_url}/", "1.0", "daily"),
+        (f"{base_url}/register", "0.8", "weekly"),
+        (f"{base_url}/login", "0.7", "weekly"),
+    ]
+    xml_items = "".join(
+        f"<url><loc>{u}</loc><lastmod>{now_d}</lastmod><changefreq>{cf}</changefreq><priority>{pr}</priority></url>"
+        for u, pr, cf in urls
+    )
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{xml_items}</urlset>'
+    return app.response_class(xml, mimetype="application/xml")
+
+
 @app.route("/", methods=["GET", "POST"])
 def landing():
     if request.method == "POST":

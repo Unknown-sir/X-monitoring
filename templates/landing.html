@@ -3,18 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>کلود کیوب | Cloud Cube — پلتفرم سرورهای مجازی ابری</title>
+    <title>کلود کیوب | خرید سرور مجازی پرسرعت ابری با تحویل آنی و پنل اختصاصی</title>
+    <meta name="description" content="خرید سرور مجازی پرسرعت ابری (VPS) از کلود کیوب با تحویل فوری، آپتایم ۹۹.۹۸٪، هارد SSD، ترافیک پرحجم، تعویض آنی سیستم‌عامل و پنل مدیریت هوشمند فارسی.">
+    <meta name="keywords" content="خرید سرور مجازی, سرور مجازی پرسرعت, سرور ابری, کلود کیوب, خرید VPS, سرور مجازی اوبونتو, Cloud Cube">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="{{ request.url_root }}">
+
+    <!-- Open Graph / Social SEO -->
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="fa_IR">
+    <meta property="og:site_name" content="کلود کیوب | Cloud Cube">
+    <meta property="og:title" content="کلود کیوب | خرید سرور مجازی ابری پرسرعت با تحویل آنی">
+    <meta property="og:description" content="سرورهای مجازی پرسرعت کلود کیوب با منابع اختصاصی، پنل مدیریت زنده، ارتقای آنی رم و پردازنده و پشتیبانی سریع.">
+    <meta property="og:url" content="{{ request.url_root }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="کلود کیوب | خرید سرور مجازی ابری پرسرعت">
+    <meta name="twitter:description" content="تحویل فوری سرور مجازی با پنل کاربری هوشمند، آپتایم ۹۹.۹۸٪ و پشتیبانی ۲۴ ساعته.">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=8.0">
+
+    <!-- Schema.org Structured Data for Google Rich Snippets -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "کلود کیوب (Cloud Cube)",
+      "url": "{{ request.url_root }}",
+      "description": "ارائه‌دهنده سرورهای مجازی ابری پرسرعت با پنل مدیریت هوشمند، تحویل فوری و پشتیبانی ۲۴ ساعته"
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "سرور مجازی پس از خرید چقدر زمان می‌برد تا تحویل شود؟",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "بلافاصله پس از تایید پرداخت، سرور شما به صورت خودکار ساخته شده و آی‌پی و مشخصات ورود در پنل کاربری نمایش داده می‌شود."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "آیا امکان ارتقای رم، پردازنده و هارد پس از خرید وجود دارد؟",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "بله؛ هر زمان از داخل پنل کاربری خود می‌توانید بدون از دست رفتن اطلاعات، رم، هسته پردازنده یا فضای هارد سرور خود را ارتقا دهید."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "چه سیستم‌عامل‌هایی قابل نصب و تعویض هستند؟",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "نسخه‌های محبوب اوبونتو، دبیان و آلمالینوکس از داخل پنل کاربری قابل انتخاب و نصب مجدد با یک کلیک هستند."
+          }
+        }
+      ]
+    }
+    </script>
 </head>
 <body>
 
+<!-- Top Navigation -->
 <header class="cc-navbar">
-    <div class="container d-flex align-items-center justify-content-between">
+    <div class="container d-flex align-items-center justify-content-between flex-wrap gap-3">
         <a href="{{ url_for('landing') }}" class="d-flex align-items-center gap-2">
             <span class="xm-logo-badge"><i class="fas fa-cube"></i></span>
             <div>
@@ -22,211 +82,321 @@
             </div>
         </a>
 
-        <nav class="d-none d-lg-flex align-items-center gap-4 small fw-bold">
-            <a href="#plans" style="color: var(--text-main);">پلن‌های VPS</a>
-            <a href="#addons" style="color: var(--text-main);">تعرفه ترافیک و IP</a>
-            <a href="#features" style="color: var(--text-main);">امکانات پنل</a>
+        <nav class="d-none d-lg-flex align-items-center gap-4 small fw-bold" aria-label="منوی اصلی">
+            <a href="#plans" style="color: var(--text-main);">پلن‌ها و تعرفه‌ها</a>
+            <a href="#why-us" style="color: var(--text-main);">چرا کلود کیوب؟</a>
+            <a href="#faq" style="color: var(--text-main);">سوالات متداول</a>
+            <a href="#support" style="color: var(--text-main);">پشتیبانی و قوانین</a>
         </nav>
 
         <div class="d-flex align-items-center gap-2">
             {% if logged_in %}
                 <a href="{{ url_for('dashboard') }}" class="btn btn-primary rounded-pill px-4">
                     <i class="fas fa-layer-group"></i>
-                    <span>پنل کاربری ({{ username }})</span>
+                    <span>ورود به پنل کاربری ({{ username }})</span>
                 </a>
             {% else %}
-                <a href="{{ url_for('login') }}" class="btn btn-outline-primary rounded-pill px-3">ورود</a>
-                <a href="{{ url_for('register') }}" class="btn btn-primary rounded-pill px-4">ثبت‌نام</a>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary rounded-pill px-3">ورود مشتریان</a>
+                <a href="{{ url_for('register') }}" class="btn btn-primary rounded-pill px-4">شروع و ثبت‌نام</a>
             {% endif %}
         </div>
     </div>
 </header>
 
-<section class="cc-hero">
-    <div class="container">
-        <div class="row align-items-center g-4">
-            <div class="col-12 col-xl-7 anim-fade-up">
-                <div class="cc-hero-badge">
-                    <span class="pulse-dot"></span>
-                    <span>زیرساخت اختصاصی VMware ESXi • اتوماسیون Cloud-Init</span>
-                </div>
-                <h1 class="cc-hero-title">
-                    نسل جدید سرورهای ابری با <span>کنسول مدیریتی هوشمند</span>
-                </h1>
-                <p class="text-muted mb-4" style="font-size: 0.98rem; max-width: 560px;">
-                    مانیتورینگ گرافیکی لحظه‌ای، ریبیلد خودکار اوبونتو با حفظ IP، مدیریت اسنپ‌شات و تغییر آنی آی‌پی در پنل کاربری اختصاصی کلود کیوب.
-                </p>
-                <div class="d-flex flex-wrap gap-3">
-                    <a href="#plans" class="btn btn-lg btn-primary rounded-pill px-4">
-                        <i class="fas fa-bolt"></i>
-                        <span>مشاهده پلن‌ها و سفارش</span>
-                    </a>
-                    <a href="{{ url_for('dashboard') if logged_in else url_for('login') }}" class="btn btn-lg btn-outline-primary rounded-pill px-4">
-                        <i class="fas fa-chart-pie"></i>
-                        <span>ورود به کنسول ابری</span>
-                    </a>
-                </div>
-            </div>
-
-            <!-- Interactive Live Telemetry Preview Card -->
-            <div class="col-12 col-xl-5 anim-fade-up delay-2">
-                <div class="card p-4" style="border-color: rgba(139, 92, 246, 0.45); box-shadow: var(--glow-violet);">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="pulse-dot"></span>
-                            <span class="fw-bold small">مانیتورینگ زنده کلود کیوب</span>
-                        </div>
-                        <span class="badge bg-primary-subtle font-mono">185.42.212.241/25</span>
+<main>
+    <!-- Hero Section -->
+    <section class="cc-hero">
+        <div class="container">
+            <div class="row align-items-center g-4">
+                <div class="col-12 col-xl-7 anim-fade-up">
+                    <div class="cc-hero-badge">
+                        <span class="pulse-dot"></span>
+                        <span>تحویل فوری • پایداری ۹۹.۹۸٪ • کنترل کامل در پنل فارسی</span>
                     </div>
+                    <h1 class="cc-hero-title">
+                        خرید سرور مجازی پرسرعت با <span>قدرت ابری و مدیریت یک‌کلیکی</span>
+                    </h1>
+                    <p class="text-muted mb-4" style="font-size: 1.04rem; max-width: 590px; line-height: 1.85;">
+                        با سرورهای ابری <strong>کلود کیوب (Cloud Cube)</strong>، سرویس خود را در چند ثانیه تحویل بگیرید، مصرف حجم و سرعت سرور را زنده ببینید، هر زمان خواستید سیستم‌عامل را عوض کنید و بدون قطعی منابع سرور را ارتقا دهید.
+                    </p>
+                    <div class="d-flex flex-wrap gap-3 mb-4">
+                        <a href="#plans" class="btn btn-lg btn-primary rounded-pill px-4">
+                            <i class="fas fa-rocket"></i>
+                            <span>انتخاب پلن و سفارش فوری</span>
+                        </a>
+                        <a href="{{ url_for('dashboard') if logged_in else url_for('register') }}" class="btn btn-lg btn-outline-primary rounded-pill px-4">
+                            <i class="fas fa-user-plus"></i>
+                            <span>ساخت حساب کاربری رایگان</span>
+                        </a>
+                    </div>
+                    <div class="d-flex flex-wrap gap-4 small text-muted">
+                        <span><i class="fas fa-check-circle text-success me-1"></i> ضمانت بازگشت وجه ۴۸ ساعته</span>
+                        <span><i class="fas fa-check-circle text-success me-1"></i> پورت پرسرعت ۱ گیگابیت</span>
+                        <span><i class="fas fa-check-circle text-success me-1"></i> آی‌پی اختصاصی ثابت</span>
+                    </div>
+                </div>
 
-                    <div class="row align-items-center g-3 mb-3">
-                        <div class="col-5 text-center">
-                            <svg width="110" height="110" viewBox="0 0 120 120" style="transform: rotate(-90deg);">
-                                <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(139,92,246,0.14)" stroke-width="12"></circle>
-                                <circle cx="60" cy="60" r="46" fill="none" stroke="#8B5CF6" stroke-width="12" stroke-dasharray="289" stroke-dashoffset="75" stroke-linecap="round"></circle>
-                            </svg>
-                            <div class="small fw-bold mt-1">۷۴٪ ترافیک آزاد</div>
-                        </div>
-                        <div class="col-7">
-                            <div class="p-2 rounded mb-2" style="background: rgba(139,92,246,0.08); border: 1px solid var(--border-subtle);">
-                                <div class="small text-muted" style="font-size: 0.75rem;">حجم مصرفی / کل</div>
-                                <div class="font-mono fw-bold text-gold">520 / 2000 GiB</div>
+                <!-- Interactive Cloud Console Showcase Card -->
+                <div class="col-12 col-xl-5 anim-fade-up">
+                    <div class="card p-4 cc-floating-card" style="border-color: rgba(139, 92, 246, 0.55); box-shadow: 0 24px 60px -12px rgba(139, 92, 246, 0.35);">
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="pulse-dot"></span>
+                                <span class="fw-bold small">پنل اختصاصی کلود کیوب</span>
                             </div>
-                            <div class="p-2 rounded" style="background: rgba(16,185,129,0.08); border: 1px solid var(--border-subtle);">
-                                <div class="small text-muted" style="font-size: 0.75rem;">وضعیت شبکه ESXi</div>
-                                <div class="fw-bold text-success small">vNIC Connected • 1 Gbps</div>
+                            <span class="badge bg-success-subtle font-mono">Ping: 14 ms • Online</span>
+                        </div>
+
+                        <div class="row align-items-center g-3 mb-3">
+                            <div class="col-5 text-center">
+                                <svg width="108" height="108" viewBox="0 0 120 120" style="transform: rotate(-90deg);">
+                                    <circle cx="60" cy="60" r="46" fill="none" stroke="rgba(139,92,246,0.16)" stroke-width="12"></circle>
+                                    <circle cx="60" cy="60" r="46" fill="none" stroke="#8B5CF6" stroke-width="12" stroke-dasharray="289" stroke-dashoffset="52" stroke-linecap="round"></circle>
+                                </svg>
+                                <div class="small fw-extrabold text-gold mt-1">۹۹.۹۸٪ آپتایم</div>
+                            </div>
+                            <div class="col-7">
+                                <div class="p-2 rounded mb-2" style="background: rgba(139,92,246,0.10); border: 1px solid var(--border-subtle);">
+                                    <div class="small text-muted" style="font-size: 0.74rem;">منابع اختصاصی پلن طلایی</div>
+                                    <div class="font-mono fw-bold text-main">4 Core • 4GB RAM • 20GB SSD</div>
+                                </div>
+                                <div class="p-2 rounded" style="background: rgba(16,185,129,0.10); border: 1px solid var(--border-subtle);">
+                                    <div class="small text-muted" style="font-size: 0.74rem;">سیستم‌عامل‌های قابل نصب</div>
+                                    <div class="fw-bold text-success small">Ubuntu • Debian • AlmaLinux</div>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Mini SVG Spline Area Chart -->
-                    <div style="height: 62px; width: 100%; overflow: hidden; border-radius: 10px; background: rgba(12,12,29,0.55); padding: 6px;">
-                        <svg viewBox="0 0 300 50" width="100%" height="50" preserveAspectRatio="none">
-                            <defs>
-                                <linearGradient id="vGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.55"/>
-                                    <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>
-                                </linearGradient>
-                            </defs>
-                            <path d="M0,42 Q35,18 75,30 T150,16 T225,24 T300,8 L300,50 L0,50 Z" fill="url(#vGrad)"></path>
-                            <path d="M0,42 Q35,18 75,30 T150,16 T225,24 T300,8" fill="none" stroke="#A78BFA" stroke-width="2.5"></path>
-                        </svg>
+                        <div class="d-flex flex-wrap gap-2 justify-content-between pt-2 border-top small">
+                            <span class="badge bg-primary-subtle"><i class="fas fa-bolt"></i> تحویل فوری</span>
+                            <span class="badge bg-info-subtle"><i class="fas fa-arrow-up-right-dots"></i> ارتقای آنی</span>
+                            <span class="badge bg-warning-subtle"><i class="fas fa-camera"></i> بکاپ اسنپ‌شات</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<!-- VPS Plans -->
-<section id="plans" class="py-3">
-    <div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="fw-extrabold m-0" style="font-size: 1.45rem;"><i class="fas fa-cubes text-primary me-1"></i> پلن‌های سرور مجازی ESXi</h2>
-            <span class="badge bg-primary-subtle">تحویل خودکار با Cloud-Init</span>
-        </div>
-
-        <div class="row g-4">
-            {% for plan in plans %}
-            <div class="col-12 col-md-6 col-xl-3 anim-fade-up delay-{{ loop.index }}">
-                <div class="cc-plan-card {% if plan.code == 'gold' %}popular{% endif %}">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge {% if plan.code == 'gold' %}bg-purple{% else %}bg-primary-subtle{% endif %}">{{ plan.badge or plan.name_en }}</span>
-                        <i class="fas fa-microchip text-primary"></i>
-                    </div>
-                    <h3 class="fw-bold mb-1" style="font-size: 1.25rem;">{{ plan.name_fa }}</h3>
-                    <div class="cc-plan-price">
-                        {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted" style="font-size: 0.8rem;">تومان</span>
-                    </div>
-
-                    <ul class="cc-spec-list">
-                        <li><span class="text-muted">پردازنده</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
-                        <li><span class="text-muted">حافظه رم</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
-                        <li><span class="text-muted">دیسک</span><strong class="font-mono">{{ plan.disk_gb }} GB SSD</strong></li>
-                        <li><span class="text-muted">ترافیک</span><strong class="font-mono text-gold">{{ plan.traffic_gib|int }} GiB</strong></li>
-                    </ul>
-
-                    <a href="{{ url_for('order_vps_page', plan=plan.code) }}" class="btn {% if plan.code == 'gold' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100 mt-auto rounded-pill">
-                        <i class="fas fa-arrow-left"></i>
-                        <span>انتخاب و سفارش</span>
-                    </a>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</section>
-
-<!-- Add-ons & Features -->
-<section id="addons" class="py-4">
-    <div class="container">
-        <div class="row g-3">
-            <div class="col-12 col-md-6">
-                <div class="card p-4 d-flex flex-row justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
+    <!-- Trust Metrics Strip -->
+    <section class="cc-trust-strip mb-5">
+        <div class="container">
+            <div class="row g-3">
+                <div class="col-6 col-md-3">
+                    <div class="cc-trust-item">
                         <span class="stat-icon bg-primary-subtle"><i class="fas fa-bolt"></i></span>
                         <div>
-                            <div class="fw-bold">ترافیک اضافه + وصل خودکار پورت</div>
-                            <div class="small text-muted">هر ۱ ترابایت (۱۰۰۰ GiB)</div>
+                            <div class="fw-extrabold">تحویل زیر ۱ دقیقه</div>
+                            <div class="small text-muted">آماده‌سازی خودکار سرور</div>
                         </div>
                     </div>
-                    <div class="fw-extrabold text-gold font-mono" style="font-size: 1.2rem;">750,000 T</div>
                 </div>
-            </div>
-            <div class="col-12 col-md-6">
-                <div class="card p-4 d-flex flex-row justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="stat-icon bg-info-subtle"><i class="fas fa-network-wired"></i></span>
+                <div class="col-6 col-md-3">
+                    <div class="cc-trust-item">
+                        <span class="stat-icon bg-success-subtle"><i class="fas fa-shield-check"></i></span>
                         <div>
-                            <div class="fw-bold">تغییر آی‌پی یا خرید آی‌پی اضافه</div>
-                            <div class="small text-muted">اعمال اتوماتیک در Netplan</div>
+                            <div class="fw-extrabold">۹۹.۹۸٪ پایداری</div>
+                            <div class="small text-muted">سخت‌افزار دیتاسنتری</div>
                         </div>
                     </div>
-                    <div class="fw-extrabold text-gold font-mono" style="font-size: 1.2rem;">340,000 T</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="cc-trust-item">
+                        <span class="stat-icon bg-info-subtle"><i class="fas fa-gauge-high"></i></span>
+                        <div>
+                            <div class="fw-extrabold">پورت ۱ گیگابیت</div>
+                            <div class="small text-muted">پهنای باند بدون افت سرعت</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="cc-trust-item">
+                        <span class="stat-icon bg-warning-subtle"><i class="fas fa-headset"></i></span>
+                        <div>
+                            <div class="fw-extrabold">پشتیبانی ۲۴/۷</div>
+                            <div class="small text-muted">پاسخگویی سریع در تیکت و تلگرام</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</section>
+    </section>
 
-<section id="features" class="py-3 mb-4">
-    <div class="container">
-        <div class="row g-3">
-            <div class="col-12 col-md-4">
-                <div class="card p-3 d-flex flex-row align-items-center gap-3">
-                    <span class="stat-icon bg-primary-subtle"><i class="fas fa-compact-disc"></i></span>
-                    <div>
-                        <div class="fw-bold small">ریبیلد آنی با حفظ IP</div>
-                        <div class="small text-muted" style="font-size: 0.78rem;">نصب مجدد اوبونتو با تزریق خودکار شبکه</div>
+    <!-- VPS Plans Section -->
+    <section id="plans" class="py-3 mb-5">
+        <div class="container">
+            <div class="text-center mb-4">
+                <span class="badge bg-primary-subtle mb-2 px-3 py-1">تعرفه‌های شفاف و اقتصادی</span>
+                <h2 class="fw-extrabold mb-2" style="font-size: 1.7rem;">پلن‌های سرور مجازی کلود کیوب</h2>
+                <p class="text-muted small">تمامی پلن‌ها شامل آی‌پی اختصاصی ثابت، پنل مدیریت زنده و امکان ارتقای منابع در هر زمان هستند</p>
+            </div>
+
+            <div class="row g-4">
+                {% for plan in plans %}
+                <div class="col-12 col-md-6 col-xl-3">
+                    <article class="cc-plan-card {% if plan.code == 'gold' %}popular{% endif %}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge {% if plan.code == 'gold' %}bg-purple{% else %}bg-primary-subtle{% endif %}">
+                                {{ plan.badge or plan.name_en }}
+                            </span>
+                            <i class="fas fa-cube text-primary" style="font-size: 1.2rem;"></i>
+                        </div>
+                        <h3 class="fw-bold mb-1" style="font-size: 1.3rem;">{{ plan.name_fa }}</h3>
+                        <div class="cc-plan-price">
+                            {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted" style="font-size: 0.82rem;">تومان / ماهانه</span>
+                        </div>
+
+                        <ul class="cc-spec-list">
+                            <li><span class="text-muted">پردازنده اختصاصی</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
+                            <li><span class="text-muted">حافظه رم</span><strong class="font-mono">{{ plan.ram_gb }} GB RAM</strong></li>
+                            <li><span class="text-muted">فضای پرسرعت</span><strong class="font-mono">{{ plan.disk_gb }} GB SSD</strong></li>
+                            <li><span class="text-muted">ترافیک ماهانه</span><strong class="font-mono text-gold">{{ plan.traffic_gib|int }} GiB</strong></li>
+                            <li><span class="text-muted">سیستم‌عامل</span><strong>Ubuntu / Debian / Alma</strong></li>
+                        </ul>
+
+                        <a href="{{ url_for('order_vps_page', plan=plan.code) }}" class="btn {% if plan.code == 'gold' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100 mt-auto rounded-pill py-2">
+                            <i class="fas fa-cart-shopping"></i>
+                            <span>سفارش فوری</span>
+                        </a>
+                    </article>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Add-On Quick Strip -->
+            <div class="row g-3 mt-4">
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 d-flex flex-row justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="stat-icon bg-primary-subtle"><i class="fas fa-bolt"></i></span>
+                            <div>
+                                <div class="fw-bold">افزایش ترافیک در هر لحظه</div>
+                                <div class="small text-muted">قابل خرید مستقیم از پنل کاربری (هر ترابایت)</div>
+                            </div>
+                        </div>
+                        <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">۷۵۰,۰۰۰ تومان</div>
                     </div>
                 </div>
-            </div>
-            <div class="col-12 col-md-4">
-                <div class="card p-3 d-flex flex-row align-items-center gap-3">
-                    <span class="stat-icon bg-success-subtle"><i class="fas fa-chart-line"></i></span>
-                    <div>
-                        <div class="fw-bold small">چارت‌های زنده مصرف و پینگ</div>
-                        <div class="small text-muted" style="font-size: 0.78rem;">رصد لحظه‌ای پهنای باند و منابع سخت‌افزاری</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-12 col-md-4">
-                <div class="card p-3 d-flex flex-row align-items-center gap-3">
-                    <span class="stat-icon bg-info-subtle"><i class="fas fa-camera"></i></span>
-                    <div>
-                        <div class="fw-bold small">پاور و اسنپ‌شات آنی</div>
-                        <div class="small text-muted" style="font-size: 0.78rem;">کنترل کامل روشن/خاموش، ریبوت و بکاپ</div>
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 d-flex flex-row justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="stat-icon bg-info-subtle"><i class="fas fa-globe"></i></span>
+                            <div>
+                                <div class="fw-bold">تعویض آی‌پی یا آی‌پی اضافه</div>
+                                <div class="small text-muted">تخصیص فوری از پنل بدون نیاز به تیکت</div>
+                            </div>
+                        </div>
+                        <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">۳۴۰,۰۰۰ تومان</div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
-</section>
+    </section>
+
+    <!-- Why Cloud Cube (Buyer Benefits) -->
+    <section id="why-us" class="py-3 mb-5">
+        <div class="container">
+            <div class="text-center mb-4">
+                <h2 class="fw-extrabold mb-2" style="font-size: 1.65rem;">چرا حرفه‌ای‌ها کلود کیوب را انتخاب می‌کنند؟</h2>
+                <p class="text-muted small">تمامی ابزارهای مدیریت سرور مجازی به ساده‌ترین شکل در اختیار شماست</p>
+            </div>
+            <div class="row g-4">
+                <div class="col-12 col-md-4">
+                    <div class="cc-benefit-card">
+                        <span class="stat-icon bg-primary-subtle mb-3"><i class="fas fa-sliders"></i></span>
+                        <h3 class="fw-bold mb-2" style="font-size: 1.08rem;">کنترل کامل بدون نیاز به پشتیبانی</h3>
+                        <p class="text-muted small mb-0">خاموش، روشن، ریبوت، تغییر سیستم‌عامل و گرفتن بکاپ فوری (Snapshot) را خودتان در چند ثانیه انجام دهید.</p>
+                    </div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="cc-benefit-card">
+                        <span class="stat-icon bg-info-subtle mb-3"><i class="fas fa-arrow-up-right-dots"></i></span>
+                        <h3 class="fw-bold mb-2" style="font-size: 1.08rem;">ارتقای رم، پردازنده و هارد در لحظه</h3>
+                        <p class="text-muted small mb-0">با رشد کسب‌وکارتان نیازی به تعویض سرور ندارید؛ منابع سخت‌افزاری سرور را بدون پاک شدن اطلاعات ارتقا دهید.</p>
+                    </div>
+                </div>
+                <div class="col-12 col-md-4">
+                    <div class="cc-benefit-card">
+                        <span class="stat-icon bg-success-subtle mb-3"><i class="fas fa-chart-line"></i></span>
+                        <h3 class="fw-bold mb-2" style="font-size: 1.08rem;">نمودار زنده مصرف و هشدار تلگرام</h3>
+                        <p class="text-muted small mb-0">مصرف پهنای باند و سرعت دانلود/آپلود سرور خود را به صورت گرافیکی رصد کنید و گزارش‌ها را در تلگرام دریافت نمایید.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section (Great for Buyer Confidence & Google SEO) -->
+    <section id="faq" class="py-3 mb-5">
+        <div class="container">
+            <div class="text-center mb-4">
+                <h2 class="fw-extrabold mb-1" style="font-size: 1.6rem;">سوالات متداول خریداران</h2>
+            </div>
+            <div class="row justify-content-center">
+                <div class="col-12 col-xl-8">
+                    <div class="cc-faq-item open">
+                        <button type="button" class="cc-faq-q" onclick="this.parentElement.classList.toggle('open')">
+                            <span>پس از ثبت سفارش و ارسال فیش، سرور چقدر زمان می‌برد تا آماده شود؟</span>
+                            <i class="fas fa-chevron-down cc-faq-icon text-primary"></i>
+                        </button>
+                        <div class="cc-faq-a">
+                            بلافاصله پس از تایید فیش واریزی (یا در لحظه هنگام پرداخت از کیف پول)، سرور شما به صورت خودکار راه‌اندازی شده و آی‌پی و مشخصات ورود در پنل کاربری شما ظاهر می‌شود.
+                        </div>
+                    </div>
+
+                    <div class="cc-faq-item">
+                        <button type="button" class="cc-faq-q" onclick="this.parentElement.classList.toggle('open')">
+                            <span>آیا اگر بعداً نیاز به رم یا هارد بیشتری داشته باشم، اطلاعاتم پاک می‌شود؟</span>
+                            <i class="fas fa-chevron-down cc-faq-icon text-primary"></i>
+                        </button>
+                        <div class="cc-faq-a">
+                            خیر؛ با استفاده از گزینه «ارتقای رم / CPU / هارد» داخل پنل کاربری، منابع سخت‌افزاری و فضای دیسک سرور بدون حذف اطلاعات و با حفظ کامل آی‌پی افزایش می‌یابد.
+                        </div>
+                    </div>
+
+                    <div class="cc-faq-item">
+                        <button type="button" class="cc-faq-q" onclick="this.parentElement.classList.toggle('open')">
+                            <span>ضمانت بازگشت وجه کلود کیوب چگونه است؟</span>
+                            <i class="fas fa-chevron-down cc-faq-icon text-primary"></i>
+                        </button>
+                        <div class="cc-faq-a">
+                            تا ۴۸ ساعت پس از تحویل سرویس، در صورتی که مصرف ترافیک کمتر از ۵۰ گیگابایت باشد، امکان درخواست لغو و بازگشت وجه (با کسر ۱۰٪ هزینه راه‌اندازی) وجود دارد.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bottom Conversion Banner -->
+    <section id="support" class="py-3 mb-5">
+        <div class="container">
+            <div class="cc-cta-banner d-flex flex-column flex-md-row justify-content-between align-items-center gap-4">
+                <div>
+                    <h2 class="fw-extrabold mb-2" style="font-size: 1.55rem; color: #fff;">آماده راه‌اندازی سرور ابری خود هستید؟</h2>
+                    <p class="mb-0 small" style="color: rgba(247, 246, 252, 0.85);">
+                        همین حالا حساب کاربری بسازید یا در تلگرام با کارشناسان فروش ما در ارتباط باشید: <strong class="font-mono text-gold">@CloudCubeVPS</strong>
+                    </p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('register') }}" class="btn btn-lg btn-primary rounded-pill px-4" style="background: #fff; color: #111127 !important;">
+                        <i class="fas fa-rocket"></i>
+                        <span>شروع رایگان</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
 
 <footer class="xm-footer">
     <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span>© Cloud Cube (کلود کیوب) • <span class="font-mono">www.cloudcube.ir</span></span>
-        <span class="font-mono text-gold">Telegram: @CloudCubeVPS | @unknown_eng</span>
+        <span>© تمامی حقوق برای مجموعه <strong>کلود کیوب (Cloud Cube)</strong> محفوظ است • <span class="font-mono">www.cloudcube.ir</span></span>
+        <div class="d-flex gap-3 small">
+            <a href="{{ url_for('login') }}">ورود</a>
+            <a href="{{ url_for('register') }}">ثبت‌نام</a>
+            <span class="font-mono text-gold">@CloudCubeVPS</span>
+        </div>
     </div>
 </footer>
 
