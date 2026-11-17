@@ -40,6 +40,37 @@ try:
 except Exception:
     pass
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+
+
+def to_jalali_str(date_str: str) -> str:
+    """Converts YYYY-MM-DD (or ISO timestamp) to Jalali YYYY/MM/DD without external libraries."""
+    if not date_str or date_str in ("نامحدود", "None", ""):
+        return date_str or "نامحدود"
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(date_str).strip())
+    if not m:
+        return str(date_str)
+    gy, gm, gd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    gy2 = (gy + 1) if gm > 2 else gy
+    days = 355666 + (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) + gd + g_d_m[gm - 1]
+    jy = -1595 + (33 * (days // 12053))
+    days %= 12053
+    jy += 4 * (days // 1461)
+    days %= 1461
+    if days > 365:
+        jy += (days - 1) // 365
+        days = (days - 1) % 365
+    if days < 186:
+        jm = 1 + (days // 31)
+        jd = 1 + (days % 31)
+    else:
+        jm = 7 + ((days - 186) // 30)
+        jd = 1 + ((days - 186) % 30)
+    return f"{jy:04d}/{jm:02d}/{jd:02d}"
+
+
+app.jinja_env.filters["jalali"] = to_jalali_str
+
 RECEIPT_UPLOAD_DIR = os.path.join("static", "uploads", "receipts")
 os.makedirs(RECEIPT_UPLOAD_DIR, exist_ok=True)
 DEFAULT_TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "socks5://CBZBWfWxTa:YZSIy26WQC@sub.rskhi.ir:12012")
@@ -1987,12 +2018,12 @@ def dashboard():
     c = conn.cursor()
     if session["role"] in ["admin", "owner"]:
         c.execute(
-            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid, active, plan_name, cpus, ram_mb, disk_gb, expires_at, monthly_price, os_name "
+            "SELECT id, name, ip, traffic_limit, traffic_usage, is_suspended, esxi_host_id, vmid, active, plan_name, cpus, ram_mb, disk_gb, expires_at, monthly_price, os_name, COALESCE(provisioning_status, 'ready'), COALESCE(power_state, 'on') "
             "FROM servers ORDER BY id DESC"
         )
     else:
         c.execute(
-            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid, s.active, s.plan_name, s.cpus, s.ram_mb, s.disk_gb, s.expires_at, s.monthly_price, s.os_name "
+            "SELECT s.id, s.name, s.ip, s.traffic_limit, s.traffic_usage, s.is_suspended, s.esxi_host_id, s.vmid, s.active, s.plan_name, s.cpus, s.ram_mb, s.disk_gb, s.expires_at, s.monthly_price, s.os_name, COALESCE(s.provisioning_status, 'ready'), COALESCE(s.power_state, 'on') "
             "FROM servers s JOIN user_servers us ON s.id = us.server_id "
             "WHERE us.user_id=? ORDER BY s.id DESC",
             (session["user_id"],),
@@ -5420,16 +5451,20 @@ def monitor_server(server_id):
             nic = detect_iface(ssh)
             vnstat_monthly = build_vnstat_monthly_cmd(nic, reset_date)
             command = (
-                "nproc && "
-                "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' && "
-                "free -m | awk '/Mem:/ {print $2}' && "
-                "free -m | awk '/Mem:/ {print $3/$2 *100}' && "
-                f"vnstat -tr 2 -i {nic} | grep 'rx' | awk '{{print $2}}' && "
-                f"vnstat -tr 2 -i {nic} | grep 'tx' | awk '{{print $2}}' && "
-                "df -BG / | awk 'NR==2 {gsub(\"G\",\"\",$2); print $2}' && "
-                "iostat -d 1 2 | tail -n 1 | awk '{print $3}' && "
-                "iostat -d 1 2 | tail -n 1 | awk '{print $4}' && "
-                f"{vnstat_monthly}"
+                "nproc; "
+                "awk '/^cpu /{u=$2+$4; t=$2+$4+$5; if(t>0) printf \"%.1f\\n\", (u*100)/t; else print 0}' /proc/stat; "
+                "free -m | awk '/Mem:/ {print $2}'; "
+                "free -m | awk '/Mem:/ {if($2>0) printf \"%.1f\\n\", ($3*100)/$2; else print 0}'; "
+                f"R1=$(cat /sys/class/net/{nic}/statistics/rx_bytes 2>/dev/null || echo 0); "
+                f"T1=$(cat /sys/class/net/{nic}/statistics/tx_bytes 2>/dev/null || echo 0); "
+                "sleep 1; "
+                f"R2=$(cat /sys/class/net/{nic}/statistics/rx_bytes 2>/dev/null || echo 0); "
+                f"T2=$(cat /sys/class/net/{nic}/statistics/tx_bytes 2>/dev/null || echo 0); "
+                "awk -v r1=$R1 -v r2=$R2 'BEGIN{printf \"%.2f\\n\", ((r2-r1)*8)/1000000}'; "
+                "awk -v t1=$T1 -v t2=$T2 'BEGIN{printf \"%.2f\\n\", ((t2-t1)*8)/1000000}'; "
+                "df -BG / | awk 'NR==2 {gsub(\"G\",\"\",$2); print $2}'; "
+                "echo 0; echo 0; "
+                f"({vnstat_monthly}) 2>/dev/null || echo 0"
             )
             _, stdout, _ = ssh.exec_command(command)
             raw_output = stdout.read().decode().strip()
@@ -5445,8 +5480,8 @@ def monitor_server(server_id):
             cpu_usage = safe_float(1)
             total_ram = int(safe_float(2))
             ram_usage = safe_float(3)
-            download = safe_float(4) / 8.0
-            upload = safe_float(5) / 8.0
+            download = safe_float(4)
+            upload = safe_float(5)
             total_network = upload + download
             total_disk = safe_float(6)
             disk_read = safe_float(7) / 1024.0

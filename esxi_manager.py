@@ -244,7 +244,8 @@ def generate_cloud_init_configs(
     # Configure user password, root SSH login & password auth
     if ssh_user == "root":
         user_block = ""
-        chpasswd_list = f"    - root:{ssh_password}"
+        chpasswd_list = f"    root:{ssh_password}"
+        runcmd_pw = f"  - echo 'root:{ssh_password}' | chpasswd\n"
     else:
         user_block = (
             "users:\n"
@@ -253,7 +254,11 @@ def generate_cloud_init_configs(
             "    shell: /bin/bash\n"
             "    lock_passwd: false\n"
         )
-        chpasswd_list = f"    - {ssh_user}:{ssh_password}\n    - root:{ssh_password}"
+        chpasswd_list = f"    {ssh_user}:{ssh_password}\n    root:{ssh_password}"
+        runcmd_pw = (
+            f"  - echo 'root:{ssh_password}' | chpasswd\n"
+            f"  - echo '{ssh_user}:{ssh_password}' | chpasswd\n"
+        )
 
     user_data = (
         "#cloud-config\n"
@@ -265,10 +270,12 @@ def generate_cloud_init_configs(
         "  list: |\n"
         f"{chpasswd_list}\n"
         "runcmd:\n"
+        f"{runcmd_pw}"
         "  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config\n"
         "  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\n"
         "  - systemctl restart ssh || systemctl restart sshd\n"
         "  - netplan apply\n"
+        "  - (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq vnstat sysstat || true) && (systemctl enable vnstat && systemctl restart vnstat || true)\n"
     )
     return meta_data, user_data, netplan_yaml
 
