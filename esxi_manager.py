@@ -276,6 +276,17 @@ def generate_cloud_init_configs(
 # ==============================================================================
 # Netplan Generator & Remote Applier
 # ==============================================================================
+def _normalize_prefix(netmask_or_prefix: str) -> str:
+    val = str(netmask_or_prefix or "24").strip().lstrip("/")
+    if "." in val:
+        try:
+            import ipaddress
+            return str(ipaddress.IPv4Network(f"0.0.0.0/{val}").prefixlen)
+        except Exception:
+            return "24"
+    return val or "24"
+
+
 def generate_netplan_yaml(
     primary_ipv4: str,
     gateway_ipv4: str,
@@ -284,49 +295,66 @@ def generate_netplan_yaml(
     ipv6: Optional[str] = None,
     ipv6_gateway: Optional[str] = None,
     nameservers: Optional[List[str]] = None,
-    iface: str = "eth0",
+    iface: str = "ens160",
 ) -> str:
-    """Generates clean Ubuntu Netplan v2 YAML."""
+    """Generates Ubuntu Netplan v2 YAML matching ESXi ens160 multi-IP format."""
     clean_ip = primary_ipv4.strip()
-    prefix = str(netmask_or_prefix).strip().lstrip("/")
+    prefix = _normalize_prefix(netmask_or_prefix)
     primary_addr = clean_ip if "/" in clean_ip else f"{clean_ip}/{prefix}"
 
-    addresses = [primary_addr]
+    addresses: List[str] = []
+    seen = set()
+
+    def _add_addr(item: str):
+        item = item.strip()
+        if not item:
+            return
+        if "/" in item:
+            ip_part, mask_part = item.split("/", 1)
+            norm = f"{ip_part.strip()}/{_normalize_prefix(mask_part)}"
+        else:
+            norm = f"{item}/{prefix}"
+        if norm not in seen:
+            seen.add(norm)
+            addresses.append(norm)
+
+    _add_addr(primary_addr)
     if extra_ips:
         for eip in extra_ips:
-            eip = eip.strip()
-            if eip:
-                addresses.append(eip if "/" in eip else f"{eip}/{prefix}")
+            _add_addr(eip)
 
     if ipv6 and ipv6.strip():
-        addresses.append(ipv6.strip())
+        v6 = ipv6.strip()
+        if v6 not in seen:
+            seen.add(v6)
+            addresses.append(v6)
 
-    ns = nameservers or ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844"]
-    ns_formatted = ", ".join(ns)
+    ns = nameservers or ["8.8.8.8", "8.8.4.4"]
 
     yaml_lines = [
         "network:",
-        "  version: 2",
-        "  renderer: networkd",
-        "  ethernets:",
-        f"    {iface}:",
-        "      dhcp4: false",
-        "      dhcp6: false",
-        "      addresses:",
+        "    ethernets:",
+        f"        {iface}:",
+        "            addresses:",
     ]
     for addr in addresses:
-        yaml_lines.append(f"        - {addr}")
+        yaml_lines.append(f"            - {addr}")
 
-    yaml_lines.append("      routes:")
-    yaml_lines.append("        - to: 0.0.0.0/0")
-    yaml_lines.append(f"          via: {gateway_ipv4.strip()}")
+    yaml_lines.append("            nameservers:")
+    yaml_lines.append("                addresses:")
+    for n in ns:
+        yaml_lines.append(f"                - {n}")
+    yaml_lines.append("                search: []")
+
+    yaml_lines.append("            routes:")
+    yaml_lines.append("            -   to: default")
+    yaml_lines.append(f"                via: {gateway_ipv4.strip()}")
 
     if ipv6_gateway and ipv6_gateway.strip():
-        yaml_lines.append("        - to: ::/0")
-        yaml_lines.append(f"          via: {ipv6_gateway.strip()}")
+        yaml_lines.append("            -   to: ::/0")
+        yaml_lines.append(f"                via: {ipv6_gateway.strip()}")
 
-    yaml_lines.append("      nameservers:")
-    yaml_lines.append(f"        addresses: [{ns_formatted}]")
+    yaml_lines.append("    version: 2")
     yaml_lines.append("")
 
     return "\n".join(yaml_lines)
@@ -340,20 +368,31 @@ def apply_netplan_to_vm(
     ssh_port: int = 22,
     timeout: int = 20,
 ) -> Tuple[bool, str]:
-    """Applies Netplan YAML directly on the target Ubuntu VM via SSH."""
+    """Applies Netplan YAML directly on the target Ubuntu VM via SSH and locks cloud-init network config."""
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(vm_ip, port=ssh_port, username=ssh_user, password=ssh_password, timeout=timeout)
 
+        # Auto-detect active NIC on VM so ens160/ens192/eth0 always matches
+        _, nic_out, _ = ssh.exec_command("ip -o -4 route show to default | awk '{print $5}' | head -n 1")
+        detected_nic = nic_out.read().decode().strip()
+        if detected_nic and detected_nic != "ens160" and "        ens160:" in netplan_content:
+            netplan_content = netplan_content.replace("        ens160:", f"        {detected_nic}:", 1)
+
         sftp = ssh.open_sftp()
         with sftp.file("/tmp/01-netcfg.yaml", "w") as f:
             f.write(netplan_content)
+        with sftp.file("/tmp/99-disable-network-config.cfg", "w") as f:
+            f.write("network: {config: disabled}\n")
         sftp.close()
 
         quoted_pw = shlex.quote(ssh_password)
         cmd = (
-            f"echo {quoted_pw} | sudo -S mv /tmp/01-netcfg.yaml /etc/netplan/01-netcfg.yaml && "
+            f"echo {quoted_pw} | sudo -S mkdir -p /etc/cloud/cloud.cfg.d && "
+            "sudo mv /tmp/99-disable-network-config.cfg /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg && "
+            "sudo rm -f /etc/netplan/50-cloud-init.yaml && "
+            "sudo mv /tmp/01-netcfg.yaml /etc/netplan/01-netcfg.yaml && "
             "sudo chmod 600 /etc/netplan/01-netcfg.yaml && "
             "sudo netplan apply"
         )
