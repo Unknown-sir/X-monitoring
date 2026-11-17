@@ -381,7 +381,7 @@ def apply_netplan_to_vm(
             netplan_content = netplan_content.replace("        ens160:", f"        {detected_nic}:", 1)
 
         sftp = ssh.open_sftp()
-        with sftp.file("/tmp/01-netcfg.yaml", "w") as f:
+        with sftp.file("/tmp/50-cloud-init.yaml", "w") as f:
             f.write(netplan_content)
         with sftp.file("/tmp/99-disable-network-config.cfg", "w") as f:
             f.write("network: {config: disabled}\n")
@@ -391,9 +391,8 @@ def apply_netplan_to_vm(
         cmd = (
             f"echo {quoted_pw} | sudo -S mkdir -p /etc/cloud/cloud.cfg.d && "
             "sudo mv /tmp/99-disable-network-config.cfg /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg && "
-            "sudo rm -f /etc/netplan/50-cloud-init.yaml && "
-            "sudo mv /tmp/01-netcfg.yaml /etc/netplan/01-netcfg.yaml && "
-            "sudo chmod 600 /etc/netplan/01-netcfg.yaml && "
+            "sudo mv /tmp/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml && "
+            "sudo chmod 600 /etc/netplan/50-cloud-init.yaml && "
             "sudo netplan apply"
         )
         _, stdout, stderr = ssh.exec_command(cmd)
@@ -445,12 +444,15 @@ def create_vm_on_esxi(
 
         clone_cmd = f"vmkfstools -i '{template_vmdk}' -d thin '{vmdk_path}'"
         _, stdout, stderr = ssh.exec_command(clone_cmd)
-        clone_out = stdout.read().decode()
-        err = stderr.read().decode().strip()
-        if err and "Cloning done with exit code 0" not in clone_out:
-            if "Destination disk format" not in err and "already exists" not in err:
-                ssh.close()
-                return False, None, f"Failed to clone VMDK: {err}"
+        exit_rc = stdout.channel.recv_exit_status()
+        clone_out = stdout.read().decode(errors="ignore")
+        err = stderr.read().decode(errors="ignore").strip()
+        # Verify the cloned VMDK actually exists before registering VM
+        _, chk_out, _ = ssh.exec_command(f"test -f '{vmdk_path}' && echo OK || echo MISSING")
+        vmdk_exists = "OK" in chk_out.read().decode(errors="ignore")
+        if (exit_rc != 0 or not vmdk_exists) and "already exists" not in err:
+            ssh.close()
+            return False, None, f"Failed to clone VMDK ({template_vmdk}): {err or clone_out or 'VMDK missing after clone'}"
 
         if disk_gb and disk_gb > 0:
             ssh.exec_command(f"vmkfstools -X {disk_gb}G '{vmdk_path}'")
@@ -461,6 +463,7 @@ def create_vm_on_esxi(
             with sftp.file(iso_path, "wb") as f:
                 f.write(seed_iso_bytes)
             cdrom_block = (
+                'ide1.present = "TRUE"\n'
                 'ide1:0.present = "TRUE"\n'
                 'ide1:0.deviceType = "cdrom-image"\n'
                 'ide1:0.fileName = "seed.iso"\n'
@@ -474,10 +477,24 @@ def create_vm_on_esxi(
         vmx_content = f"""\
 .encoding = "UTF-8"
 config.version = "8"
-virtualHW.version = "14"
+virtualHW.version = "13"
+pciBridge0.present = "TRUE"
+pciBridge4.present = "TRUE"
+pciBridge4.virtualDev = "pcieRootPort"
+pciBridge4.functions = "8"
+pciBridge5.present = "TRUE"
+pciBridge5.virtualDev = "pcieRootPort"
+pciBridge5.functions = "8"
+pciBridge6.present = "TRUE"
+pciBridge6.virtualDev = "pcieRootPort"
+pciBridge6.functions = "8"
+pciBridge7.present = "TRUE"
+pciBridge7.virtualDev = "pcieRootPort"
+pciBridge7.functions = "8"
 vmci0.present = "TRUE"
+hpet0.present = "TRUE"
 displayName = "{clean_vm_name}"
-guestOS = "ubuntu-64"
+guestOS = "ubuntu64Guest"
 memSize = "{ram_mb}"
 numvcpus = "{cpus}"
 scsi0.present = "TRUE"
@@ -499,6 +516,7 @@ powerType.suspend = "soft"
             f.write(vmx_content)
         sftp.close()
 
+        ssh.exec_command(f"chmod 755 '{vm_dir}' && chmod 644 '{vmx_path}'")
         reg_cmd = f"vim-cmd solo/registervm '{vmx_path}'"
         _, stdout, stderr = ssh.exec_command(reg_cmd)
         reg_out = stdout.read().decode().strip()
@@ -890,3 +908,21 @@ def enable_vm_vnc_on_esxi(
             ssh.close()
     except Exception as ex:
         return False, f"خطا در اتصال به ESXi: {ex}"
+
+
+def get_vm_power_state(esxi_host: str, port: int, user: str, password: str, vmid: int) -> str:
+    """Returns 'on', 'off', or 'unknown' by querying vim-cmd vmsvc/power.getstate."""
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password, timeout=10)
+        try:
+            _, stdout, _ = ssh.exec_command(f"vim-cmd vmsvc/power.getstate {int(vmid)}")
+            out = stdout.read().decode("utf-8", errors="ignore").lower()
+            if "powered on" in out:
+                return "on"
+            if "powered off" in out or "suspended" in out:
+                return "off"
+            return "unknown"
+        finally:
+            ssh.close()
+    except Exception:
+        return "unknown"

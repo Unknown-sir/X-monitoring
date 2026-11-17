@@ -1,5 +1,14 @@
 {% extends "base.html" %}
-{% block title %}پنل کاربری | کلود کیوب{% endblock %}
+{% block title %}پنل کاربری | کلود کیوب
+<script>
+(function() {
+    const hasProv = {{ 'true' if servers|selectattr(16, 'equalto', 'provisioning')|list|length > 0 else 'false' }};
+    if (hasProv) {
+        setTimeout(() => { window.location.reload(); }, 8000);
+    }
+})();
+</script>
+{% endblock %}
 {% block content %}
 
 {% set ns = namespace(total_used=0.0, total_limit=0.0, active_cnt=0) %}
@@ -123,6 +132,8 @@
     {% set exp_at = s[13] or 'نامحدود' %}
     {% set m_price = s[14] or 1450000 %}
     {% set os_title = s[15] or 'Ubuntu 22.04 LTS' %}
+    {% set prov_status = s[16] or 'ready' %}
+    {% set pwr_state = s[17] or 'on' %}
     {% set pct = ((usage_gib / limit_gib) * 100)|round(1) if limit_gib > 0 else 0 %}
     {% set ring_off = (176 - (176 * ([pct, 100]|min) / 100))|round(1) %}
 
@@ -151,12 +162,16 @@
                 </div>
 
                 <div class="text-end">
-                    {% if is_susp %}
-                        <span class="badge bg-danger-subtle"><i class="fas fa-ban"></i> مسدود (اتمام حجم)</span>
-                    {% elif is_active %}
-                        <span class="badge bg-success-subtle"><span class="pulse-dot me-1"></span> آنلاین</span>
-                    {% else %}
+                    {% if prov_status == 'provisioning' %}
+                        <span class="badge bg-info-subtle"><i class="fas fa-spinner fa-spin me-1"></i> در حال ساخت و نصب...</span>
+                    {% elif prov_status == 'failed' %}
+                        <span class="badge bg-danger-subtle"><i class="fas fa-triangle-exclamation me-1"></i> خطا در ساخت سرور</span>
+                    {% elif is_susp %}
+                        <span class="badge bg-danger-subtle"><i class="fas fa-ban"></i> مسدود (اتمام حجم / سررسید)</span>
+                    {% elif pwr_state == 'off' or not is_active %}
                         <span class="badge bg-warning-subtle"><i class="fas fa-power-off"></i> خاموش</span>
+                    {% else %}
+                        <span class="badge bg-success-subtle"><span class="pulse-dot me-1"></span> آنلاین</span>
                     {% endif %}
                     <div class="small font-mono text-gold mt-1">مصرف دانلود: {{ "%.2f"|format(usage_gib) }} / {{ "%.0f"|format(limit_gib) }} GiB</div>
                 </div>
@@ -204,9 +219,11 @@
                 <div class="col-12 col-md-7">
                     <form method="POST" action="{{ url_for('recharge_traffic_action', server_id=srv_id) }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-1 align-items-center">
                         <select name="add_amount" class="form-select form-select-sm" style="width: auto; flex: 1;">
-                            <option value="100">+100G (۷۵,۰۰۰ ت)</option>
-                            <option value="500">+500G (۳۷۵,۰۰۰ ت)</option>
-                            <option value="1000" selected>+1TB (۷۵۰,۰۰۰ ت)</option>
+                            <option value="1000" selected>+1 TB (۷۵۰,۰۰۰ ت)</option>
+                            <option value="2000">+2 TB (۱,۵۰۰,۰۰۰ ت)</option>
+                            <option value="3000">+3 TB (۲,۲۵۰,۰۰۰ ت)</option>
+                            <option value="5000">+5 TB (۳,۷۵۰,۰۰۰ ت)</option>
+                            <option value="10000">+10 TB (۷,۵۰۰,۰۰۰ ت)</option>
                         </select>
                         <select name="pay_method" class="form-select form-select-sm" style="width: auto;" onchange="this.form.querySelector('.rc-file-{{ srv_id }}').style.display = (this.value === 'receipt' ? 'block' : 'none');">
                             <option value="receipt" selected>با فیش واریزی</option>

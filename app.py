@@ -495,6 +495,8 @@ def init_db():
         ("ipv6", "TEXT DEFAULT NULL"),
         ("ipv6_gateway", "TEXT DEFAULT NULL"),
         ("extra_ips", "TEXT DEFAULT NULL"),
+        ("provisioning_status", "TEXT DEFAULT 'ready'"),
+        ("power_state", "TEXT DEFAULT 'on'"),
         ("mac_address", "TEXT DEFAULT NULL"),
         ("plan_name", "TEXT DEFAULT NULL"),
         ("cpus", "INTEGER DEFAULT 2"),
@@ -1191,38 +1193,8 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
     esxi_host_id = esxi_row[0] if esxi_row else None
     vmid = None
 
-    if esxi_row and pool_row:
-        netplan_yaml = esxi_manager.generate_netplan_yaml(
-            primary_ipv4=primary_ip,
-            gateway_ipv4=gateway,
-            netmask_or_prefix=netmask or "25",
-            ipv6=ipv6,
-            ipv6_gateway=ipv6_gw,
-        )
-        meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
-            vm_name=clean_name,
-            ssh_user="root",
-            ssh_password=root_password,
-            netplan_yaml=netplan_yaml,
-        )
-        seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
-        ok, created_vmid, _ = esxi_manager.create_vm_on_esxi(
-            esxi_host=esxi_row[1],
-            esxi_port=esxi_row[2],
-            esxi_user=esxi_row[3],
-            esxi_password=esxi_row[4],
-            vm_name=clean_name,
-            cpus=cpus,
-            ram_mb=ram_mb,
-            disk_gb=disk_gb,
-            datastore=esxi_row[5],
-            template_vmdk=chosen_vmdk or esxi_row[7],
-            network_name=esxi_row[6],
-            mac_address=mac_addr,
-            seed_iso_bytes=seed_iso,
-        )
-        if ok:
-            vmid = created_vmid
+    init_prov_status = "provisioning" if (esxi_row and pool_row) else "ready"
+    init_power_state = "off" if (esxi_row and pool_row) else "on"
 
     now_iso = datetime.datetime.utcnow().isoformat()
     expires_at_str = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
@@ -1231,8 +1203,8 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             name, ip, username, password, traffic_limit, active, traffic_usage,
             updated_at, esxi_host_id, vmid, vm_name, is_suspended,
             netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb,
-            expires_at, monthly_price, os_name, template_vmdk
-        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            expires_at, monthly_price, os_name, template_vmdk, provisioning_status, power_state
+        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             clean_name,
             primary_ip,
@@ -1255,9 +1227,76 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             plan_price,
             chosen_os_name,
             chosen_vmdk,
+            init_prov_status,
+            init_power_state,
         ),
     )
     srv_id = c.lastrowid
+
+    if esxi_row and pool_row:
+        def _bg_provision(target_srv_id, e_row, p_ip, gw, nm, v6, v6gw, m_addr, c_name, r_pw, c_cpus, c_ram, c_disk, c_vmdk):
+            try:
+                netplan_yaml = esxi_manager.generate_netplan_yaml(
+                    primary_ipv4=p_ip,
+                    gateway_ipv4=gw,
+                    netmask_or_prefix=nm or "25",
+                    ipv6=v6,
+                    ipv6_gateway=v6gw,
+                )
+                meta_d, user_d, net_d = esxi_manager.generate_cloud_init_configs(
+                    vm_name=c_name,
+                    ssh_user="root",
+                    ssh_password=r_pw,
+                    netplan_yaml=netplan_yaml,
+                )
+                seed_iso = esxi_manager.build_cloud_init_iso(meta_d, user_d, net_d)
+                ok, created_vmid, detail_msg = esxi_manager.create_vm_on_esxi(
+                    esxi_host=e_row[1],
+                    esxi_port=e_row[2],
+                    esxi_user=e_row[3],
+                    esxi_password=e_row[4],
+                    vm_name=c_name,
+                    cpus=c_cpus,
+                    ram_mb=c_ram,
+                    disk_gb=c_disk,
+                    datastore=e_row[5],
+                    template_vmdk=c_vmdk or e_row[7],
+                    network_name=e_row[6],
+                    mac_address=m_addr,
+                    seed_iso_bytes=seed_iso,
+                )
+                bg_conn = get_db_connection()
+                bg_c = bg_conn.cursor()
+                bg_now = datetime.datetime.utcnow().isoformat()
+                if ok and created_vmid:
+                    bg_c.execute(
+                        "UPDATE servers SET vmid=?, provisioning_status='ready', power_state='on', updated_at=? WHERE id=?",
+                        (created_vmid, bg_now, target_srv_id),
+                    )
+                    bg_c.execute(
+                        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+                        (target_srv_id, f"سرور {c_name} ({p_ip}) با موفقیت روی ESXi ساخته و روشن شد (VMID: {created_vmid}).", bg_now),
+                    )
+                else:
+                    bg_c.execute(
+                        "UPDATE servers SET provisioning_status='failed', power_state='off', updated_at=? WHERE id=?",
+                        (bg_now, target_srv_id),
+                    )
+                    bg_c.execute(
+                        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)",
+                        (target_srv_id, f"خطا در ساخت سرور {c_name}: {detail_msg}", bg_now),
+                    )
+                bg_conn.commit()
+                bg_conn.close()
+                invalidate_servers_cache()
+            except Exception as bg_ex:
+                logging.error(f"Background VM provisioning error for server {target_srv_id}: {bg_ex}")
+
+        threading.Thread(
+            target=_bg_provision,
+            args=(srv_id, tuple(esxi_row), primary_ip, gateway, netmask, ipv6, ipv6_gw, mac_addr, clean_name, root_password, cpus, ram_mb, disk_gb, chosen_vmdk),
+            daemon=True,
+        ).start()
     if pool_id:
         c.execute("UPDATE ip_pool SET is_allocated=1, server_id=? WHERE id=?", (srv_id, pool_id))
     c.execute("INSERT OR IGNORE INTO user_servers (user_id, server_id) VALUES (?, ?)", (user_id, srv_id))
@@ -2104,15 +2143,14 @@ def order_vps_page():
             clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label) or f"cc-{p_code}-{int(time.time()) % 10000}"
 
             if pay_method == "wallet":
-                if session.get("role") not in ["admin", "owner"]:
-                    c.execute(
-                        "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
-                        (price_toman, session["user_id"], price_toman),
-                    )
-                    if c.rowcount == 0:
-                        conn.close()
-                        error_msg = f"موجودی کیف پول شما کافی نیست ({price_toman:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
-                        return render_template("order_vps.html", plans=plans, selected_code=selected_code, error_msg=error_msg)
+                c.execute(
+                    "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                    (price_toman, session["user_id"], price_toman),
+                )
+                if c.rowcount == 0:
+                    conn.close()
+                    error_msg = f"موجودی کیف پول شما کافی نیست ({price_toman:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
+                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, selected_code=selected_code, error_msg=error_msg)
 
                 _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password, os_template_id=os_template_id)
                 conn.commit()
@@ -4777,11 +4815,11 @@ def recharge_traffic_action(server_id):
         return "Forbidden", 403
 
     try:
-        add_amount = float(request.form.get("add_amount", 100) or 100)
+        add_amount = float(request.form.get("add_amount", 1000) or 1000)
     except ValueError:
-        add_amount = 100.0
-    if add_amount <= 0 or add_amount > 100000:
-        add_amount = 100.0
+        add_amount = 1000.0
+    if add_amount not in (1000.0, 2000.0, 3000.0, 5000.0, 10000.0):
+        add_amount = 1000.0
     cost_toman = int(add_amount * 750)  # 750,000 Tomans per 1000 GiB (1 TB)
     pay_method = request.form.get("pay_method", "receipt").strip()
     tracking_note = request.form.get("tracking_note", "").strip()
