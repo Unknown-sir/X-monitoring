@@ -800,3 +800,54 @@ def get_vm_network_stats_on_esxi(
         return True, total_dl_bytes, total_ul_bytes, "OK"
     except Exception as e:
         return False, 0, 0, str(e)
+
+
+def enable_vm_vnc_on_esxi(
+    esxi_host: str,
+    port: int,
+    user: str,
+    password: str,
+    vmid: int,
+    vnc_port: int,
+    vnc_password: str,
+) -> Tuple[bool, str]:
+    """Enables VNC RemoteDisplay in the VM's .vmx file on ESXi and reloads the VM config."""
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password, timeout=15)
+        try:
+            _, out, _ = ssh.exec_command(f"vim-cmd vmsvc/get.config {int(vmid)} | grep -i vmPathName | head -n 1")
+            vmx_line = out.read().decode("utf-8", errors="ignore").strip()
+            # Fallback: find vmx via getallvms
+            _, out2, _ = ssh.exec_command(f"vim-cmd vmsvc/getallvms | awk '$1=={int(vmid)} {{print $3, $4}}'")
+            all_line = out2.read().decode("utf-8", errors="ignore").strip()
+            # Extract [datastore] path/to/vm.vmx
+            import re as _re
+            m = _re.search(r"\[([^\]]+)\]\s+(\S+\.vmx)", all_line)
+            if not m:
+                _, out3, _ = ssh.exec_command(f"vim-cmd vmsvc/get.summary {int(vmid)} | grep -i vmPathName")
+                s_line = out3.read().decode("utf-8", errors="ignore")
+                m = _re.search(r"\[([^\]]+)\]\s+(\S+\.vmx)", s_line)
+            if not m:
+                return False, "مسیر فایل VMX ماشین مجازی روی ESXi یافت نشد."
+
+            ds_name, rel_vmx = m.group(1), m.group(2)
+            vmx_abs = f"/vmfs/volumes/{ds_name}/{rel_vmx}"
+
+            cmds = [
+                f"sed -i '/RemoteDisplay\.vnc\./d' '{vmx_abs}'",
+                f"echo 'RemoteDisplay.vnc.enabled = \"TRUE\"' >> '{vmx_abs}'",
+                f"echo 'RemoteDisplay.vnc.port = \"{int(vnc_port)}\"' >> '{vmx_abs}'",
+                f"echo 'RemoteDisplay.vnc.password = \"{vnc_password}\"' >> '{vmx_abs}'",
+                f"vim-cmd vmsvc/reload {int(vmid)}",
+                "esxcli network firewall ruleset set --enabled=true --ruleset-id=gdbserver >/dev/null 2>&1 || true",
+            ]
+            full_cmd = " && ".join(cmds)
+            _, _, stderr = ssh.exec_command(full_cmd)
+            err_txt = stderr.read().decode("utf-8", errors="ignore").strip()
+            if err_txt and "Permission denied" in err_txt:
+                return False, f"خطای دسترسی در ESXi: {err_txt}"
+            return True, f"پورت VNC ({vnc_port}) روی فایل VMX فعال شد."
+        finally:
+            ssh.close()
+    except Exception as ex:
+        return False, f"خطا در اتصال به ESXi: {ex}"

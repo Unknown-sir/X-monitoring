@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}کنسول تحت وب {{ srv[1] }} | کلود کیوب{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 anim-fade-up">
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.3rem;">
+            <i class="fas fa-terminal text-primary me-1"></i> کنسول تحت وب سرور <span class="font-mono text-gold">{{ srv[1] }}</span>
+        </h1>
+        <span class="small text-muted font-mono">IP: {{ srv[2] }} • User: {{ srv[3] or 'root' }}</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+            <i class="fas fa-arrow-right"></i> بازگشت به داشبورد
+        </a>
+        {% if srv[5] and srv[6] %}
+        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3" onclick="enableEsxiVnc()">
+            <i class="fas fa-desktop"></i> فعال‌سازی VNC اضطراری ESXi
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Connection Bar & Custom Password -->
+<div class="card p-3 mb-3 anim-fade-up delay-1">
+    <div class="row g-2 align-items-center">
+        <div class="col-12 col-md-4">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text font-mono" style="background: rgba(139,92,246,0.16); border-color: var(--border-color); color: var(--text-main);">رمز root</span>
+                <input type="password" id="consoleSshPass" class="form-control form-control-sm font-mono" placeholder="خالی = رمز ذخیره شده">
+            </div>
+        </div>
+        <div class="col-12 col-md-8 d-flex flex-wrap gap-2 justify-content-md-end align-items-center">
+            <span id="consoleStatusBadge" class="badge bg-warning-subtle font-mono">آماده اتصال</span>
+            <button type="button" id="consoleConnectBtn" class="btn btn-sm btn-primary rounded-pill px-3" onclick="connectWebConsole()">
+                <i class="fas fa-plug"></i> اتصال به ترمینال
+            </button>
+            <button type="button" id="consoleDisconnectBtn" class="btn btn-sm btn-outline-danger rounded-pill px-3" onclick="disconnectWebConsole()" style="display: none;">
+                <i class="fas fa-power-off"></i> قطع اتصال
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="toggleConsoleFullscreen()">
+                <i class="fas fa-expand"></i> تمام‌صفحه
+            </button>
+        </div>
+    </div>
+
+    <!-- Quick Commands -->
+    <div class="d-flex flex-wrap gap-1 mt-2 pt-2 border-top align-items-center">
+        <span class="small text-muted me-1">دستورات سریع:</span>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('uname -a && uptime\n')">وضعیت سیستم</button>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('free -h && df -h\n')">رم و هارد</button>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('ip -br a\n')">آی‌پی‌ها</button>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('htop || top\n')">منابع زنده</button>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('\x03')">Ctrl+C</button>
+        <button type="button" class="cc-canned-chip" onclick="sendQuickCmd('clear\n')">پاک کردن صفحه</button>
+    </div>
+</div>
+
+<!-- ESXi VNC Info Box -->
+<div id="esxiVncResultBox" class="alert alert-info mb-3" style="display: none;"></div>
+
+<!-- Terminal Container -->
+<div id="consoleContainerCard" class="card p-2 anim-fade-up delay-2" style="background: #090916; border: 1px solid rgba(139, 92, 246, 0.45); border-radius: 16px;">
+    <div id="xtermMount" style="width: 100%; height: 480px; direction: ltr; text-align: left;"></div>
+</div>
+
+<script>
+const SERVER_ID = {{ srv[0] }};
+let term = null;
+let fitAddon = null;
+let consoleCsid = null;
+let ioPollTimer = null;
+let pendingInput = "";
+let ioBusy = false;
+
+function initTerminal() {
+    if (term) return;
+    term = new Terminal({
+        cursorBlink: true,
+        fontFamily: "'JetBrains Mono', Consolas, monospace",
+        fontSize: 14,
+        theme: {
+            background: "#090916",
+            foreground: "#F7F6FC",
+            cursor: "#A78BFA",
+            selectionBackground: "rgba(139, 92, 246, 0.35)"
+        }
+    });
+    fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById("xtermMount"));
+    fitAddon.fit();
+    term.writeln("\x1b[1;35mCloud Cube Web Console\x1b[0m — آماده اتصال به {{ srv[2] }}");
+    term.onData(data => {
+        if (!consoleCsid) return;
+        pendingInput += data;
+    });
+    window.addEventListener("resize", () => { if (fitAddon) fitAddon.fit(); });
+}
+
+async function connectWebConsole() {
+    initTerminal();
+    const passVal = document.getElementById("consoleSshPass").value;
+    const badge = document.getElementById("consoleStatusBadge");
+    const cBtn = document.getElementById("consoleConnectBtn");
+    const dBtn = document.getElementById("consoleDisconnectBtn");
+
+    badge.className = "badge bg-info-subtle font-mono";
+    badge.innerText = "در حال اتصال...";
+    cBtn.disabled = true;
+
+    try {
+        const resp = await fetch("/api/server/" + SERVER_ID + "/console/connect", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                ssh_password: passVal,
+                cols: term.cols || 110,
+                rows: term.rows || 32
+            })
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            badge.className = "badge bg-danger-subtle font-mono";
+            badge.innerText = "خطای اتصال";
+            term.writeln("\r\n\x1b[1;31mخطا: " + (data.error || "اتصال برقرار نشد") + "\x1b[0m");
+            cBtn.disabled = false;
+            return;
+        }
+        consoleCsid = data.csid;
+        badge.className = "badge bg-success-subtle font-mono";
+        badge.innerText = "متصل (آنلاین)";
+        cBtn.style.display = "none";
+        dBtn.style.display = "inline-flex";
+        term.clear();
+        term.focus();
+        if (ioPollTimer) clearInterval(ioPollTimer);
+        ioPollTimer = setInterval(pumpConsoleIO, 90);
+    } catch (e) {
+        badge.className = "badge bg-danger-subtle font-mono";
+        badge.innerText = "خطای شبکه";
+        cBtn.disabled = false;
+    }
+}
+
+async function pumpConsoleIO() {
+    if (!consoleCsid || ioBusy) return;
+    ioBusy = true;
+    const sendChunk = pendingInput;
+    pendingInput = "";
+    try {
+        const resp = await fetch("/api/server/" + SERVER_ID + "/console/io", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                csid: consoleCsid,
+                input: sendChunk,
+                cols: term.cols || 110,
+                rows: term.rows || 32
+            })
+        });
+        const data = await resp.json();
+        if (data.output) term.write(data.output);
+        if (data.closed) {
+            disconnectWebConsole(true);
+        }
+    } catch (e) {}
+    ioBusy = false;
+}
+
+async function disconnectWebConsole(fromServer) {
+    if (ioPollTimer) clearInterval(ioPollTimer);
+    ioPollTimer = null;
+    const oldCsid = consoleCsid;
+    consoleCsid = null;
+    if (!fromServer && oldCsid) {
+        fetch("/api/server/" + SERVER_ID + "/console/disconnect", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ csid: oldCsid })
+        }).catch(() => {});
+    }
+    const badge = document.getElementById("consoleStatusBadge");
+    badge.className = "badge bg-warning-subtle font-mono";
+    badge.innerText = "قطع شد";
+    document.getElementById("consoleConnectBtn").style.display = "inline-flex";
+    document.getElementById("consoleConnectBtn").disabled = false;
+    document.getElementById("consoleDisconnectBtn").style.display = "none";
+}
+
+function sendQuickCmd(cmd) {
+    if (!consoleCsid) {
+        connectWebConsole().then(() => { setTimeout(() => { pendingInput += cmd; }, 700); });
+        return;
+    }
+    pendingInput += cmd;
+    if (term) term.focus();
+}
+
+function toggleConsoleFullscreen() {
+    const el = document.getElementById("consoleContainerCard");
+    if (!document.fullscreenElement) {
+        el.requestFullscreen().then(() => { setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 200); }).catch(() => {});
+    } else {
+        document.exitFullscreen().then(() => { setTimeout(() => { if (fitAddon) fitAddon.fit(); }, 200); }).catch(() => {});
+    }
+}
+
+async function enableEsxiVnc() {
+    const box = document.getElementById("esxiVncResultBox");
+    box.style.display = "block";
+    box.className = "alert alert-info mb-3";
+    box.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> در حال فعال‌سازی پورت VNC روی هاست ESXi...';
+    try {
+        const resp = await fetch("/api/server/" + SERVER_ID + "/console/vnc_enable", { method: "POST" });
+        const data = await resp.json();
+        if (!data.ok) {
+            box.className = "alert alert-danger mb-3";
+            box.innerText = data.error || "خطا در فعال‌سازی VNC";
+            return;
+        }
+        box.className = "alert alert-success mb-3";
+        box.innerHTML =
+            '<strong><i class="fas fa-check-circle me-1"></i> دسترسی VNC اضطراری فعال شد:</strong> ' +
+            '<span class="font-mono ms-2">Host: ' + data.vnc_host + '</span> | ' +
+            '<span class="font-mono">Port: ' + data.vnc_port + '</span> | ' +
+            '<span class="font-mono">Password: ' + data.vnc_password + '</span>';
+    } catch (e) {
+        box.className = "alert alert-danger mb-3";
+        box.innerText = "خطا در ارتباط با سرور پنل.";
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initTerminal();
+});
+window.addEventListener("beforeunload", () => {
+    if (consoleCsid) disconnectWebConsole(false);
+});
+</script>
+{% endblock %}

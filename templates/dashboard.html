@@ -168,6 +168,10 @@
                     <i class="fas fa-chart-area"></i> چارت زنده
                 </a>
 
+                <a href="{{ url_for('server_console_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-info">
+                    <i class="fas fa-terminal"></i> کنسول وب
+                </a>
+
                 <form method="POST" action="{{ url_for('user_power_action', server_id=srv_id, action='on') }}" class="m-0">
                     <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-play"></i> روشن</button>
                 </form>

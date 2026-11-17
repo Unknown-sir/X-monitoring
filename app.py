@@ -3806,6 +3806,209 @@ def api_domain_ssl_status():
         return jsonify({"ok": False, "error": "دسترسی غیرمجاز"}), 403
     return jsonify({"ok": True, **DOMAIN_SSL_STATE})
 
+
+# =========================================================
+# Per-Server Web Console (Interactive PTY SSH + ESXi VNC)
+# =========================================================
+WEB_CONSOLE_SESSIONS = {}
+WEB_CONSOLE_LOCK = threading.Lock()
+
+
+def _user_can_access_server(server_id: int) -> bool:
+    if not session.get("user_id"):
+        return False
+    if session.get("role") in ("owner", "admin"):
+        return True
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM user_servers WHERE user_id=? AND server_id=?", (session["user_id"], server_id))
+    ok = c.fetchone() is not None
+    conn.close()
+    return ok
+
+
+def _cleanup_expired_consoles():
+    now_ts = time.time()
+    with WEB_CONSOLE_LOCK:
+        dead_keys = [k for k, v in WEB_CONSOLE_SESSIONS.items() if now_ts - v.get("last_used", 0) > 900]
+        for k in dead_keys:
+            sess_obj = WEB_CONSOLE_SESSIONS.pop(k, None)
+            if sess_obj:
+                try:
+                    sess_obj["channel"].close()
+                except Exception:
+                    pass
+                try:
+                    sess_obj["ssh"].close()
+                except Exception:
+                    pass
+
+
+def _console_reader_loop(csid: str):
+    while True:
+        with WEB_CONSOLE_LOCK:
+            obj = WEB_CONSOLE_SESSIONS.get(csid)
+        if not obj or obj.get("closed"):
+            break
+        chan = obj["channel"]
+        try:
+            if chan.recv_ready():
+                chunk = chan.recv(8192).decode("utf-8", errors="replace")
+                with WEB_CONSOLE_LOCK:
+                    if csid in WEB_CONSOLE_SESSIONS:
+                        WEB_CONSOLE_SESSIONS[csid]["buffer"].append(chunk)
+            elif chan.exit_status_ready():
+                with WEB_CONSOLE_LOCK:
+                    if csid in WEB_CONSOLE_SESSIONS:
+                        WEB_CONSOLE_SESSIONS[csid]["buffer"].append("\r\n[اتصال ترمینال بسته شد]\r\n")
+                        WEB_CONSOLE_SESSIONS[csid]["closed"] = True
+                break
+            else:
+                time.sleep(0.04)
+        except Exception:
+            break
+
+
+@app.route("/server/<int:server_id>/console")
+@login_required
+def server_console_page(server_id):
+    if not _user_can_access_server(server_id):
+        return redirect(url_for("dashboard"))
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, name, ip, username, password, esxi_host_id, vmid, is_suspended, os_template FROM servers WHERE id=?",
+        (server_id,),
+    )
+    srv = c.fetchone()
+    conn.close()
+    if not srv:
+        return redirect(url_for("dashboard"))
+    return render_template("server_console.html", srv=srv)
+
+
+@app.route("/api/server/<int:server_id>/console/connect", methods=["POST"])
+@login_required
+def api_server_console_connect(server_id):
+    if not _user_can_access_server(server_id):
+        return jsonify({"ok": False, "error": "دسترسی غیرمجاز"}), 403
+    _cleanup_expired_consoles()
+
+    data = request.get_json(silent=True) or {}
+    custom_pass = (data.get("ssh_password") or "").strip()
+    cols = max(40, min(220, int(data.get("cols", 110) or 110)))
+    rows = max(12, min(80, int(data.get("rows", 32) or 32)))
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT ip, username, password, is_suspended FROM servers WHERE id=?", (server_id,))
+    srv = c.fetchone()
+    conn.close()
+    if not srv:
+        return jsonify({"ok": False, "error": "سرور یافت نشد."}), 404
+    ip, ssh_user, db_pass, is_susp = srv
+    if is_susp:
+        return jsonify({"ok": False, "error": "این سرور مسدود است؛ ابتدا سرویس را تمدید یا شارژ کنید."}), 400
+
+    use_pass = custom_pass or db_pass
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip, username=ssh_user or "root", password=use_pass, timeout=12)
+        chan = ssh.invoke_shell(term="xterm-256color", width=cols, height=rows)
+        chan.settimeout(0.0)
+    except Exception as ex:
+        return jsonify({"ok": False, "error": f"خطا در اتصال به کنسول سرور ({ip}): {ex}"}), 400
+
+    csid = uuid.uuid4().hex
+    with WEB_CONSOLE_LOCK:
+        WEB_CONSOLE_SESSIONS[csid] = {
+            "user_id": session["user_id"],
+            "server_id": server_id,
+            "ssh": ssh,
+            "channel": chan,
+            "buffer": [],
+            "closed": False,
+            "last_used": time.time(),
+        }
+    threading.Thread(target=_console_reader_loop, args=(csid,), daemon=True).start()
+    return jsonify({"ok": True, "csid": csid})
+
+
+@app.route("/api/server/<int:server_id>/console/io", methods=["POST"])
+@login_required
+def api_server_console_io(server_id):
+    data = request.get_json(silent=True) or {}
+    csid = (data.get("csid") or "").strip()
+    inp = data.get("input")
+    cols = data.get("cols")
+    rows = data.get("rows")
+
+    with WEB_CONSOLE_LOCK:
+        obj = WEB_CONSOLE_SESSIONS.get(csid)
+        if not obj or obj["server_id"] != server_id or (obj["user_id"] != session["user_id"] and session.get("role") not in ("owner", "admin")):
+            return jsonify({"ok": False, "closed": True, "output": ""})
+        obj["last_used"] = time.time()
+        if cols and rows:
+            try:
+                obj["channel"].resize_pty(width=int(cols), height=int(rows))
+            except Exception:
+                pass
+        if inp:
+            try:
+                obj["channel"].send(inp)
+            except Exception:
+                obj["closed"] = True
+        out_text = "".join(obj["buffer"])
+        obj["buffer"].clear()
+        is_closed = obj.get("closed", False)
+
+    return jsonify({"ok": True, "output": out_text, "closed": is_closed})
+
+
+@app.route("/api/server/<int:server_id>/console/disconnect", methods=["POST"])
+@login_required
+def api_server_console_disconnect(server_id):
+    data = request.get_json(silent=True) or {}
+    csid = (data.get("csid") or "").strip()
+    with WEB_CONSOLE_LOCK:
+        obj = WEB_CONSOLE_SESSIONS.pop(csid, None)
+    if obj:
+        try:
+            obj["channel"].close()
+        except Exception:
+            pass
+        try:
+            obj["ssh"].close()
+        except Exception:
+            pass
+    return jsonify({"ok": True})
+
+
+@app.route("/api/server/<int:server_id>/console/vnc_enable", methods=["POST"])
+@login_required
+def api_server_console_vnc_enable(server_id):
+    if not _user_can_access_server(server_id):
+        return jsonify({"ok": False, "error": "دسترسی غیرمجاز"}), 403
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    if not row or not row[0] or not row[2]:
+        return jsonify({"ok": False, "error": "این سرور به هاست ESXi متصل نیست."}), 400
+    vmid, _, esxi_ip, esxi_port, esxi_user, esxi_pass = row
+    vnc_port = 5900 + int(server_id)
+    vnc_pass = uuid.uuid4().hex[:8]
+    ok, msg = esxi_manager.enable_vm_vnc_on_esxi(esxi_ip, esxi_port, esxi_user, esxi_pass, int(vmid), vnc_port, vnc_pass)
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 400
+    return jsonify({"ok": True, "vnc_host": esxi_ip, "vnc_port": vnc_port, "vnc_password": vnc_pass, "message": msg})
+
 @app.route("/admin_settings", methods=["GET", "POST"])
 @perm_required("settings_manage")
 def admin_settings_page():
