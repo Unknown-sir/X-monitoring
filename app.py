@@ -3947,7 +3947,7 @@ def server_console_page(server_id):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT id, name, ip, username, password, esxi_host_id, vmid, is_suspended, os_template FROM servers WHERE id=?",
+        "SELECT id, name, ip, username, password, esxi_host_id, vmid, is_suspended, COALESCE(os_name, 'Ubuntu 22.04 LTS') FROM servers WHERE id=?",
         (server_id,),
     )
     srv = c.fetchone()
