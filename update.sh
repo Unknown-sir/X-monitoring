@@ -26,15 +26,16 @@ fi
 
 if [[ -x "$APP_DIR/venv/bin/pip" ]]; then
     echo "📦 در حال بررسی و نصب پکیج‌های جدید Python..."
-    "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt" --quiet
+    "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/requirements.txt" --quiet || true
 else
-    pip3 install -r "$APP_DIR/requirements.txt" --quiet
+    pip3 install -r "$APP_DIR/requirements.txt" --quiet || true
 fi
 
 chmod +x "$APP_DIR/install.sh" "$APP_DIR/update.sh" || true
 
 if systemctl list-unit-files | grep -q "^cloudcube.service"; then
     echo "🚀 در حال ری‌استارت سرویس دائمی cloudcube..."
+    pkill -f "/opt/cloudcube/app.py" || true
     systemctl restart cloudcube
     sleep 2
     systemctl status cloudcube --no-pager -l | head -n 15

@@ -463,7 +463,6 @@ def create_vm_on_esxi(
             with sftp.file(iso_path, "wb") as f:
                 f.write(seed_iso_bytes)
             cdrom_block = (
-                'ide1.present = "TRUE"\n'
                 'ide1:0.present = "TRUE"\n'
                 'ide1:0.deviceType = "cdrom-image"\n'
                 'ide1:0.fileName = "seed.iso"\n'
@@ -926,3 +925,33 @@ def get_vm_power_state(esxi_host: str, port: int, user: str, password: str, vmid
             ssh.close()
     except Exception:
         return "unknown"
+
+
+def delete_vm_from_esxi(
+    esxi_host: str,
+    port: int,
+    user: str,
+    password: str,
+    vmid: Optional[int],
+    vm_name: str,
+    datastore: str,
+) -> Tuple[bool, str]:
+    """Powers off, unregisters, and permanently deletes a VM directory from ESXi datastore."""
+    clean_vm_name = re.sub(r"[^a-zA-Z0-9_-]", "_", (vm_name or "").strip())
+    try:
+        ssh = get_ssh_client(esxi_host, port, user, password, timeout=15)
+        try:
+            target_vmid = int(vmid) if vmid else get_vm_id_by_name(ssh, clean_vm_name)
+            if target_vmid:
+                ssh.exec_command(f"vim-cmd vmsvc/power.off {target_vmid}")
+                time.sleep(2)
+                ssh.exec_command(f"vim-cmd vmsvc/unregister {target_vmid}")
+                time.sleep(1)
+            if clean_vm_name and datastore:
+                vm_dir = f"/vmfs/volumes/{datastore}/{clean_vm_name}"
+                ssh.exec_command(f"rm -rf '{vm_dir}'")
+            return True, f"ماشین مجازی {clean_vm_name or target_vmid} به صورت کامل از ESXi حذف شد."
+        finally:
+            ssh.close()
+    except Exception as ex:
+        return False, f"خطا در حذف VM از ESXi: {ex}"

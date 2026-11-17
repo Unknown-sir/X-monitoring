@@ -116,6 +116,11 @@
                                     <a href="{{ url_for('toggle_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-secondary rounded-pill">
                                         <i class="fas fa-power-off"></i> {% if server[7] %}خاموش{% else %}روشن{% endif %}
                                     </a>
+                                    <form method="POST" action="{{ url_for('admin_terminate_server', server_id=server[0]) }}" class="m-0 d-inline" onsubmit="return confirm('⚠️ آیا مطمئنید؟ سرور به صورت کامل از ESXi پاک و IP آن آزاد می‌شود!')">
+                                        <button type="submit" class="btn btn-sm btn-danger rounded-pill">
+                                            <i class="fas fa-bomb"></i> حذف کامل از ESXi و آزادسازی IP
+                                        </button>
+                                    </form>
                                     <a href="{{ url_for('delete_server', server_id=server[0]) }}" class="btn btn-sm btn-outline-danger rounded-pill" onclick="return confirm('آیا از حذف این سرور از پنل مطمئنید؟ (آی‌پی آن در بانک آزاد می‌شود)')">
                                         <i class="fas fa-trash"></i> حذف
                                     </a>

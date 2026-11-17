@@ -497,6 +497,7 @@ def init_db():
         ("extra_ips", "TEXT DEFAULT NULL"),
         ("provisioning_status", "TEXT DEFAULT 'ready'"),
         ("power_state", "TEXT DEFAULT 'on'"),
+        ("post_expiry_notified", "INTEGER DEFAULT 0"),
         ("mac_address", "TEXT DEFAULT NULL"),
         ("plan_name", "TEXT DEFAULT NULL"),
         ("cpus", "INTEGER DEFAULT 2"),
@@ -1391,7 +1392,7 @@ def _execute_vps_renewal(c, server_id: int, months: int = 1) -> str:
         except Exception:
             pass
     new_exp = (base_date + datetime.timedelta(days=30 * max(1, int(months)))).strftime("%Y-%m-%d")
-    c.execute("UPDATE servers SET expires_at=?, expiry_warned_at=NULL, active=1 WHERE id=?", (new_exp, server_id))
+    c.execute("UPDATE servers SET expires_at=?, expiry_warned_at=NULL, post_expiry_notified=0, active=1 WHERE id=?", (new_exp, server_id))
 
     if is_susp and host_id and vmid and esxi_ip:
         esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, connected=True)
@@ -4047,6 +4048,33 @@ def api_server_console_vnc_enable(server_id):
         return jsonify({"ok": False, "error": msg}), 400
     return jsonify({"ok": True, "vnc_host": esxi_ip, "vnc_port": vnc_port, "vnc_password": vnc_pass, "message": msg})
 
+
+
+@app.route("/admin/server/<int:server_id>/terminate", methods=["POST"])
+@perm_required("servers_manage")
+def admin_terminate_server(server_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT s.name, s.vm_name, s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password, h.default_datastore
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row:
+        sname, vm_name, vmid, host_id, esxi_ip, esxi_port, esxi_u, esxi_p, ds_name = row
+        if host_id and esxi_ip:
+            esxi_manager.delete_vm_from_esxi(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, vm_name or sname, ds_name or "datastore1")
+    c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM user_servers WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM traffic_samples WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM events WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM servers WHERE id=?", (server_id,))
+    conn.commit()
+    conn.close()
+    invalidate_servers_cache()
+    return redirect(url_for("manage_servers"))
+
 @app.route("/admin_settings", methods=["GET", "POST"])
 @perm_required("settings_manage")
 def admin_settings_page():
@@ -6000,7 +6028,7 @@ def daily_lifecycle_and_backup_worker():
             c = conn.cursor()
             c.execute(
                 """SELECT s.id, s.name, s.ip, s.expires_at, s.expiry_warned_at, s.is_suspended,
-                          s.vmid, s.esxi_host_id, s.telegram_chat_id,
+                          s.vmid, s.esxi_host_id, s.telegram_chat_id, COALESCE(s.post_expiry_notified, 0),
                           h.ip, h.port, h.username, h.password
                    FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id
                    WHERE s.active=1 AND s.expires_at IS NOT NULL AND s.expires_at != ''"""
@@ -6008,31 +6036,56 @@ def daily_lifecycle_and_backup_worker():
             srv_rows = c.fetchall()
 
             for sr in srv_rows:
-                sid, sname, sip, exp_at, warned_at, is_susp, vmid, host_id, srv_tg, esxi_ip, esxi_port, esxi_u, esxi_p = sr
-                # Find linked user telegram chat id
+                sid, sname, sip, exp_at, warned_at, is_susp, vmid, host_id, srv_tg, post_notified, esxi_ip, esxi_port, esxi_u, esxi_p = sr
+                # Find linked user telegram chat id & username
                 c.execute(
-                    "SELECT u.telegram_chat_id FROM users u JOIN user_servers us ON u.id=us.user_id WHERE us.server_id=? LIMIT 1",
+                    "SELECT u.telegram_chat_id, u.username, COALESCE(u.full_name, u.username) FROM users u JOIN user_servers us ON u.id=us.user_id WHERE us.server_id=? LIMIT 1",
                     (sid,),
                 )
                 ur = c.fetchone()
                 user_tg = (ur[0].strip() if ur and ur[0] else "") or (srv_tg or "").strip()
+                owner_uname = ur[1] if ur else "نامشخص"
+                owner_fname = ur[2] if ur else "مشتری"
 
-                # Expired -> Auto-Suspend vNIC on ESXi!
+                # Expired -> Auto-Suspend vNIC on ESXi & notify User + Management!
                 if exp_at < today_str and not is_susp:
                     if host_id and vmid and esxi_ip:
                         esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, connected=False)
                     c.execute("UPDATE servers SET is_suspended=1 WHERE id=?", (sid,))
                     now_iso = datetime.datetime.utcnow().isoformat()
-                    msg = (
+                    user_msg = (
                         f"⛔ *سررسید ماهانه و تعلیق خودکار:* مهلت سرویس *{sname}* (`{sip}`) در تاریخ `{exp_at}` به پایان رسید و پورت شبکه مسدود شد. "
                         "جهت بازگشایی، از پنل کاربری اقدام به تمدید نمایید."
                     )
-                    c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (sid, msg, now_iso))
+                    adm_msg = (
+                        f"⛔ *پایان مهلت و مسدودسازی شبکه:* تاریخ سررسید سرور *{sname}* (`{sip}`) متعلق به کاربر *{owner_fname}* (`{owner_uname}`) "
+                        f"در تاریخ `{exp_at}` به پایان رسید و شبکه آن ساسپند شد."
+                    )
+                    c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (sid, adm_msg, now_iso))
                     conn.commit()
                     if user_tg:
-                        send_telegram_alert(user_tg, msg)
+                        send_telegram_alert(user_tg, user_msg)
                     if admin_chat:
-                        send_telegram_alert(admin_chat, msg)
+                        send_telegram_alert(admin_chat, adm_msg)
+
+                # 3 Days After Expiry -> Notify Management to Release IP & Delete VM from ESXi!
+                elif exp_at < today_str and is_susp and not post_notified:
+                    try:
+                        exp_dt_obj = datetime.datetime.strptime(exp_at, "%Y-%m-%d").date()
+                        if (today_date - exp_dt_obj).days >= 3:
+                            c.execute("UPDATE servers SET post_expiry_notified=1 WHERE id=?", (sid,))
+                            now_iso = datetime.datetime.utcnow().isoformat()
+                            del_msg = (
+                                f"🗑️ *هشدار ۳ روز پس از انقضا (آزادسازی IP و حذف سرور):*\n"
+                                f"سرور *{sname}* (`{sip}`) متعلق به کاربر *{owner_fname}* (`{owner_uname}`) ۳ روز پیش در تاریخ `{exp_at}` منقضی شده و هنوز تمدید نشده است.\n"
+                                "لطفاً از بخش «مدیریت سرورها» در پنل، دکمه **حذف کامل از ESXi و آزادسازی IP** را بزنید."
+                            )
+                            c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (sid, del_msg, now_iso))
+                            conn.commit()
+                            if admin_chat:
+                                send_telegram_alert(admin_chat, del_msg)
+                    except Exception:
+                        pass
 
                 # 3 Days or Less Remaining -> Send Renewal Warning
                 elif today_str <= exp_at <= warn_threshold and not warned_at:
