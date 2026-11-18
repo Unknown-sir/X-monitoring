@@ -854,10 +854,10 @@ def get_vm_network_stats_on_esxi(
             stats_out = stdout.read().decode("utf-8", errors="ignore")
             tx_m = re.search(r"Bytes (?:sent|Tx):\s*(\d+)", stats_out, re.IGNORECASE)
             rx_m = re.search(r"Bytes (?:received|Rx):\s*(\d+)", stats_out, re.IGNORECASE)
-            if tx_m:
-                total_dl_bytes += int(tx_m.group(1))
             if rx_m:
-                total_ul_bytes += int(rx_m.group(1))
+                total_dl_bytes += int(rx_m.group(1))
+            if tx_m:
+                total_ul_bytes += int(tx_m.group(1))
 
         ssh.close()
         return True, total_dl_bytes, total_ul_bytes, "OK"
