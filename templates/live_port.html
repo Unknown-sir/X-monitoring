@@ -91,8 +91,12 @@
                         <div id="traffic_bar" class="progress-bar bg-success" style="width: 0%;"></div>
                     </div>
                     <div class="d-flex justify-content-between mt-2 small text-muted">
-                        <span>مصرف‌شده تاکنون</span>
-                        <span class="font-mono"><span id="traffic_usage">0</span> GiB</span>
+                        <span>مصرف‌شده (دانلود)</span>
+                        <span class="font-mono text-gold"><span id="traffic_usage">0</span> GiB</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1 small text-muted">
+                        <span>حجم باقی‌مانده</span>
+                        <span class="font-mono text-success fw-bold"><span id="traffic_remaining">0</span> GiB</span>
                     </div>
                 </div>
             </div>
@@ -286,6 +290,9 @@ function updateMetrics() {
             const pct = trafficLimit > 0 ? clampPercent((trafficUsage / trafficLimit) * 100) : 0;
             document.getElementById('traffic_limit').textContent = trafficLimit > 0 ? trafficLimit.toFixed(1) : '∞';
             document.getElementById('traffic_usage').textContent = trafficUsage.toFixed(2);
+            const trafficRem = data.traffic_remaining !== undefined ? Number(data.traffic_remaining) : Math.max(0, trafficLimit - trafficUsage);
+            const remEl = document.getElementById('traffic_remaining');
+            if (remEl) remEl.textContent = trafficRem.toFixed(2);
             document.getElementById('traffic_percent_badge').textContent = pct.toFixed(1) + '%';
             document.getElementById('traffic_bar').style.width = pct.toFixed(0) + '%';
 

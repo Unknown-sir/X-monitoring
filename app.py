@@ -5437,12 +5437,13 @@ def monitor_server(server_id):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT ip, username, password, traffic_limit, telegram_chat_id, reset_date, name FROM servers WHERE id=?",
+        "SELECT ip, username, password, traffic_limit, telegram_chat_id, reset_date, name, COALESCE(traffic_usage, 0), esxi_host_id FROM servers WHERE id=?",
         (server_id,),
     )
     server = c.fetchone()
     if server:
-        ip, username, password, traffic_limit, telegram_chat_id, reset_date, name = server
+        ip, username, password, traffic_limit, telegram_chat_id, reset_date, name, db_traffic_usage, esxi_host_id = server
+        db_traffic_usage = float(db_traffic_usage or 0.0)
         traffic_limit = float(traffic_limit or 0.0)
         try:
             ssh = paramiko.SSHClient()
@@ -5486,7 +5487,10 @@ def monitor_server(server_id):
             total_disk = safe_float(6)
             disk_read = safe_float(7) / 1024.0
             disk_write = safe_float(8) / 1024.0
-            traffic_usage = safe_float(9)
+            vnstat_usage = safe_float(9)
+            # For ESXi-managed servers, NEVER overwrite authoritative ESXi vSwitch usage with guest vnstat (which may be 0)
+            traffic_usage = db_traffic_usage if esxi_host_id else (vnstat_usage if vnstat_usage > 0 else db_traffic_usage)
+            traffic_remaining = max(0.0, traffic_limit - traffic_usage) if traffic_limit > 0 else 0.0
 
             now_iso = datetime.datetime.utcnow().isoformat()
             ping_result = subprocess.run(["ping", "-c", "1", "-W", "2", ip], capture_output=True, text=True)
@@ -5497,15 +5501,16 @@ def monitor_server(server_id):
             )
             ssh.close()
 
-            c.execute(
-                "UPDATE servers SET traffic_usage=?, updated_at=? WHERE id=?",
-                (traffic_usage, now_iso, server_id),
-            )
-            c.execute(
-                "INSERT INTO traffic_samples (server_id, usage_gib, created_at) VALUES (?, ?, ?)",
-                (server_id, traffic_usage, now_iso),
-            )
-            conn.commit()
+            if not esxi_host_id and vnstat_usage > 0:
+                c.execute(
+                    "UPDATE servers SET traffic_usage=?, updated_at=? WHERE id=?",
+                    (traffic_usage, now_iso, server_id),
+                )
+                c.execute(
+                    "INSERT INTO traffic_samples (server_id, usage_gib, created_at) VALUES (?, ?, ?)",
+                    (server_id, traffic_usage, now_iso),
+                )
+                conn.commit()
             conn.close()
 
             data = {
@@ -5521,6 +5526,7 @@ def monitor_server(server_id):
                 "disk_write": disk_write,
                 "traffic_limit": traffic_limit,
                 "traffic_usage": traffic_usage,
+                "traffic_remaining": round(traffic_remaining, 2),
                 "ping_time": ping_time,
                 "ping_france_time": 0.0,
                 "server_status": "active",
