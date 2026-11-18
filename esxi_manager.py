@@ -839,7 +839,7 @@ def get_vm_network_stats_on_esxi(
 
         port_ids = []
         for line in port_list_out.splitlines():
-            m = re.search(r"Port ID:\s*(\d+)", line)
+            m = re.match(r"^\s*Port ID:\s*(\d+)", line)
             if m:
                 port_ids.append(m.group(1))
 
@@ -852,8 +852,8 @@ def get_vm_network_stats_on_esxi(
         for pid in port_ids:
             _, stdout, _ = ssh.exec_command(f"esxcli network port stats get -p {pid}")
             stats_out = stdout.read().decode("utf-8", errors="ignore")
-            tx_m = re.search(r"Bytes Tx:\s*(\d+)", stats_out)
-            rx_m = re.search(r"Bytes Rx:\s*(\d+)", stats_out)
+            tx_m = re.search(r"Bytes (?:sent|Tx):\s*(\d+)", stats_out, re.IGNORECASE)
+            rx_m = re.search(r"Bytes (?:received|Rx):\s*(\d+)", stats_out, re.IGNORECASE)
             if tx_m:
                 total_dl_bytes += int(tx_m.group(1))
             if rx_m:
