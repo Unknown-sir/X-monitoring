@@ -49,6 +49,53 @@
                 <label class="form-label">ظرفیت کل هارد SSD میزبان (GB)</label>
                 <input type="number" name="max_disk_gb_pool" value="{{ settings.max_disk_gb_pool }}" class="form-control font-mono" required>
             </div>
+            <div class="col-12 col-md-6">
+                <label class="form-label">قیمت هر ۱ ترابایت ترافیک اضافه (تومان)</label>
+                <input type="number" name="traffic_tb_price" value="{{ settings.traffic_tb_price or 750000 }}" class="form-control font-mono text-gold" required>
+            </div>
+            <div class="col-12 col-md-6">
+                <label class="form-label">قیمت آی‌پی اضافه / تغییر IP (تومان)</label>
+                <input type="number" name="extra_ip_price" value="{{ settings.extra_ip_price or 340000 }}" class="form-control font-mono text-gold" required>
+            </div>
+
+            <!-- Add-On Seasonal Discounts (Black Friday) -->
+            <div class="col-12 mt-2">
+                <div class="p-3 rounded" style="background: rgba(244, 63, 94, 0.08); border: 1px dashed rgba(244, 63, 94, 0.45);">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <span class="cc-promo-badge"><i class="fas fa-fire"></i> تخفیف مناسبتی ارتقای منابع، ترافیک و IP اضافه</span>
+                        <label class="d-flex align-items-center gap-2 small fw-bold" style="cursor: pointer;">
+                            <input type="checkbox" name="addon_promo_active" value="1" {% if settings.addon_promo_active == '1' %}checked{% endif %} style="accent-color: #F43F5E;">
+                            <span>تخفیف افزودنی‌ها فعال باشد</span>
+                        </label>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">CPU تخفیفی</label>
+                            <input type="number" name="upgrade_cpu_promo_price" value="{{ settings.upgrade_cpu_promo_price or '' }}" class="form-control form-control-sm font-mono" placeholder="اختیاری">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">RAM تخفیفی</label>
+                            <input type="number" name="upgrade_ram_promo_price" value="{{ settings.upgrade_ram_promo_price or '' }}" class="form-control form-control-sm font-mono" placeholder="اختیاری">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">SSD تخفیفی</label>
+                            <input type="number" name="upgrade_disk_promo_price" value="{{ settings.upgrade_disk_promo_price or '' }}" class="form-control form-control-sm font-mono" placeholder="اختیاری">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">۱ ترا ترافیک تخفیفی</label>
+                            <input type="number" name="traffic_tb_promo_price" value="{{ settings.traffic_tb_promo_price or '' }}" class="form-control form-control-sm font-mono" placeholder="اختیاری">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">IP اضافه تخفیفی</label>
+                            <input type="number" name="extra_ip_promo_price" value="{{ settings.extra_ip_promo_price or '' }}" class="form-control form-control-sm font-mono" placeholder="اختیاری">
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label class="form-label small">تگ تخفیف</label>
+                            <input type="text" name="addon_promo_label" value="{{ settings.addon_promo_label or 'تخفیف بلک فرایدی' }}" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="mt-3 text-end">
             <button type="submit" class="btn btn-primary rounded-pill px-4">

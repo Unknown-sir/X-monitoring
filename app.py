@@ -5,6 +5,7 @@ import ipaddress
 import json
 import logging
 import os
+from pathlib import Path
 import platform
 import random
 import re
@@ -1854,6 +1855,43 @@ def send_database_backup_to_owner(force: bool = False) -> tuple[bool, str]:
         return False, str(e)
 
 
+
+
+def get_effective_addon_tariffs() -> dict:
+    """Returns base and promo-adjusted tariffs for CPU, RAM, SSD, 1TB Traffic, and Extra IP."""
+    cfg = get_system_settings()
+    promo_on = str(cfg.get("addon_promo_active", "0")).strip() == "1"
+    promo_lbl = (cfg.get("addon_promo_label") or "تخفیف بلک فرایدی").strip()
+
+    def _pair(base_key: str, promo_key: str, default_val: int) -> tuple[int, int]:
+        try:
+            base_v = int(cfg.get(base_key) or default_val)
+        except Exception:
+            base_v = default_val
+        try:
+            pr_raw = str(cfg.get(promo_key) or "").strip()
+            pr_v = int(pr_raw) if pr_raw.isdigit() and int(pr_raw) > 0 else None
+        except Exception:
+            pr_v = None
+        eff_v = pr_v if (promo_on and pr_v is not None and 0 < pr_v < base_v) else base_v
+        return base_v, eff_v
+
+    cpu_base, cpu_eff = _pair("upgrade_cpu_price", "upgrade_cpu_promo_price", 250000)
+    ram_base, ram_eff = _pair("upgrade_ram_price", "upgrade_ram_promo_price", 180000)
+    disk_base, disk_eff = _pair("upgrade_disk_price", "upgrade_disk_promo_price", 25000)
+    tb_base, tb_eff = _pair("traffic_tb_price", "traffic_tb_promo_price", 750000)
+    ip_base, ip_eff = _pair("extra_ip_price", "extra_ip_promo_price", 340000)
+
+    return {
+        "addon_promo_active": promo_on,
+        "addon_promo_label": promo_lbl,
+        "cpu_base": cpu_base, "cpu_eff": cpu_eff,
+        "ram_base": ram_base, "ram_eff": ram_eff,
+        "disk_base": disk_base, "disk_eff": disk_eff,
+        "tb_base": tb_base, "tb_eff": tb_eff,
+        "ip_base": ip_base, "ip_eff": ip_eff,
+    }
+
 def get_active_plans():
     conn = get_db_connection()
     c = conn.cursor()
@@ -2083,6 +2121,7 @@ def dashboard():
         plans=plans,
         os_templates=os_templates,
         today_str=today_str,
+        addon_tariffs=get_effective_addon_tariffs(),
         my_requests=my_requests,
         role=session["role"],
         time_left=time_left,
@@ -2358,7 +2397,11 @@ def user_ip_service_page(server_id):
     if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
         return "Forbidden", 403
 
-    ip_service_fee = 340000
+    _ad = get_effective_addon_tariffs()
+    ip_service_fee = _ad["ip_eff"]
+    ip_base_fee = _ad["ip_base"]
+    addon_promo_active = _ad["addon_promo_active"] and ip_service_fee < ip_base_fee
+    addon_promo_label = _ad["addon_promo_label"]
     conn = get_db_connection()
     c = conn.cursor()
     error_msg = None
@@ -3409,10 +3452,17 @@ def manage_plans_page():
     upgrade_msg = None
     if request.method == "POST":
         if request.form.get("form_type") == "upgrade_tariffs":
-            for k in ("upgrade_cpu_price", "upgrade_ram_price", "upgrade_disk_price", "max_cpu_pool", "max_ram_gb_pool", "max_disk_gb_pool"):
+            for k in (
+                "upgrade_cpu_price", "upgrade_ram_price", "upgrade_disk_price",
+                "traffic_tb_price", "extra_ip_price",
+                "upgrade_cpu_promo_price", "upgrade_ram_promo_price", "upgrade_disk_promo_price",
+                "traffic_tb_promo_price", "extra_ip_promo_price", "addon_promo_label",
+                "max_cpu_pool", "max_ram_gb_pool", "max_disk_gb_pool",
+            ):
                 if k in request.form:
-                    set_system_setting(k, request.form.get(k, "0"))
-            upgrade_msg = "تعرفه‌های ارتقای منابع و ظرفیت کل سرورها با موفقیت ذخیره شد."
+                    set_system_setting(k, request.form.get(k, "").strip())
+            set_system_setting("addon_promo_active", "1" if request.form.get("addon_promo_active") == "1" else "0")
+            upgrade_msg = "تعرفه‌های ارتقا، ترافیک، آی‌پی و تخفیف‌های مناسبتی با موفقیت ذخیره شد."
         elif request.form.get("form_type") == "toggle_all_promo":
             set_state = 1 if request.form.get("promo_state") == "1" else 0
             c.execute("UPDATE vps_plans SET promo_active=?", (set_state,))
@@ -4926,7 +4976,8 @@ def recharge_traffic_action(server_id):
         add_amount = 1000.0
     if add_amount not in (1000.0, 2000.0, 3000.0, 5000.0, 10000.0):
         add_amount = 1000.0
-    cost_toman = int(add_amount * 750)  # 750,000 Tomans per 1000 GiB (1 TB)
+    _ad_tb = get_effective_addon_tariffs()
+    cost_toman = int((add_amount / 1000.0) * _ad_tb["tb_eff"])
     pay_method = request.form.get("pay_method", "receipt").strip()
     tracking_note = request.form.get("tracking_note", "").strip()
 

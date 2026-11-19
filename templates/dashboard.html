@@ -220,12 +220,13 @@
             <div class="row g-2 pt-2 border-top">
                 <div class="col-12 col-md-7">
                     <form method="POST" action="{{ url_for('recharge_traffic_action', server_id=srv_id) }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-1 align-items-center">
+                        {% set tb_p = addon_tariffs.tb_eff if addon_tariffs else 750000 %}
                         <select name="add_amount" class="form-select form-select-sm" style="width: auto; flex: 1;">
-                            <option value="1000" selected>+1 TB (۷۵۰,۰۰۰ ت)</option>
-                            <option value="2000">+2 TB (۱,۵۰۰,۰۰۰ ت)</option>
-                            <option value="3000">+3 TB (۲,۲۵۰,۰۰۰ ت)</option>
-                            <option value="5000">+5 TB (۳,۷۵۰,۰۰۰ ت)</option>
-                            <option value="10000">+10 TB (۷,۵۰۰,۰۰۰ ت)</option>
+                            <option value="1000" selected>+1 TB ({{ "{:,}".format(tb_p) }} ت){% if addon_tariffs and addon_tariffs.addon_promo_active and addon_tariffs.tb_eff < addon_tariffs.tb_base %} 🔥{% endif %}</option>
+                            <option value="2000">+2 TB ({{ "{:,}".format(tb_p * 2) }} ت)</option>
+                            <option value="3000">+3 TB ({{ "{:,}".format(tb_p * 3) }} ت)</option>
+                            <option value="5000">+5 TB ({{ "{:,}".format(tb_p * 5) }} ت)</option>
+                            <option value="10000">+10 TB ({{ "{:,}".format(tb_p * 10) }} ت)</option>
                         </select>
                         <select name="pay_method" class="form-select form-select-sm" style="width: auto;" onchange="this.form.querySelector('.rc-file-{{ srv_id }}').style.display = (this.value === 'receipt' ? 'block' : 'none');">
                             <option value="receipt" selected>با فیش واریزی</option>
