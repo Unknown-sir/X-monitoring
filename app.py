@@ -1967,7 +1967,7 @@ def landing():
     if request.method == "POST":
         return login()
     plans = get_active_plans()
-    return render_template("landing.html", plans=plans, logged_in=("user_id" in session), username=session.get("username", ""))
+    return render_template("landing.html", plans=plans, addon_tariffs=get_effective_addon_tariffs(), logged_in=("user_id" in session), username=session.get("username", ""))
 
 
 @app.route("/login", methods=["GET", "POST"])

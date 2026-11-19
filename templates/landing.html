@@ -237,7 +237,15 @@
                                 <div class="small text-muted">هر ترابایت ترافیک اضافه (قابل شارژ از پنل)</div>
                             </div>
                         </div>
-                        <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">۷۵۰,۰۰۰ تومان</div>
+                        <div class="text-end">
+                            {% if addon_tariffs and addon_tariffs.addon_promo_active and addon_tariffs.tb_eff < addon_tariffs.tb_base %}
+                            <div><span class="cc-old-price font-mono">{{ "{:,}".format(addon_tariffs.tb_base) }} تومان</span></div>
+                            <div><span class="cc-promo-badge"><i class="fas fa-fire"></i> {{ addon_tariffs.addon_promo_label }}</span></div>
+                            <div class="cc-new-price font-mono" style="font-size: 1.15rem;">{{ "{:,}".format(addon_tariffs.tb_eff) }} تومان</div>
+                            {% else %}
+                            <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">{{ "{:,}".format(addon_tariffs.tb_base if addon_tariffs else 750000) }} تومان</div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
                 <div class="col-12 col-md-6">
@@ -249,7 +257,15 @@
                                 <div class="small text-muted">تخصیص فوری آی‌پی جدید در پنل کاربری</div>
                             </div>
                         </div>
-                        <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">۳۴۰,۰۰۰ تومان</div>
+                        <div class="text-end">
+                            {% if addon_tariffs and addon_tariffs.addon_promo_active and addon_tariffs.ip_eff < addon_tariffs.ip_base %}
+                            <div><span class="cc-old-price font-mono">{{ "{:,}".format(addon_tariffs.ip_base) }} تومان</span></div>
+                            <div><span class="cc-promo-badge"><i class="fas fa-fire"></i> {{ addon_tariffs.addon_promo_label }}</span></div>
+                            <div class="cc-new-price font-mono" style="font-size: 1.15rem;">{{ "{:,}".format(addon_tariffs.ip_eff) }} تومان</div>
+                            {% else %}
+                            <div class="fw-extrabold text-gold font-mono" style="font-size: 1.15rem;">{{ "{:,}".format(addon_tariffs.ip_base if addon_tariffs else 340000) }} تومان</div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
