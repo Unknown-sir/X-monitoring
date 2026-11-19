@@ -1,12 +1,12 @@
-# 🧊 Cloud Cube (X-monitoring) — SaaS VPS Store, ESXi Automation & Monitoring Panel
+# 🧊 IronCore Cloud (X-monitoring) — SaaS VPS Store, ESXi Automation & Monitoring Panel
 
-**Cloud Cube** is a full-stack SaaS VPS hosting platform featuring a customer dashboard, multi-department ticketing & CRM (Support, Sales, Billing), Iranian National ID KYC verification, two-way card-to-card receipt approval (Web Panel + Telegram Bot over SOCKS5 proxy), granular module-based RBAC accounting, and full **VMware ESXi** automation (Cloud-Init provisioning, live CPU/RAM/SSD upgrades, snapshots, IP pool management, and automated vNIC suspension).
+**IronCore Cloud** is a full-stack SaaS VPS hosting platform featuring a customer dashboard, multi-department ticketing & CRM (Support, Sales, Billing), Iranian National ID KYC verification, two-way card-to-card receipt approval (Web Panel + Telegram Bot over SOCKS5 proxy), granular module-based RBAC accounting, and full **VMware ESXi** automation (Cloud-Init provisioning, live CPU/RAM/SSD upgrades, snapshots, IP pool management, and automated vNIC suspension).
 
 ---
 
 ## 🚀 One-Command Permanent Production Installation (Ubuntu / Debian)
 
-Run this command as `root` on your server to install Cloud Cube to `/opt/cloudcube`, configure a permanent **`systemd` service (`cloudcube`)** that runs 24/7 and auto-starts on boot, and register the global `cloudcube-update` command:
+Run this command as `root` on your server to install IronCore Cloud to `/opt/cloudcube`, configure a permanent **`systemd` service (`cloudcube`)** that runs 24/7 and auto-starts on boot, and register the global `cloudcube-update` command:
 
 ```bash
 git clone https://github.com/Unknown-sir/X-monitoring.git /opt/cloudcube && cd /opt/cloudcube && sudo bash install.sh

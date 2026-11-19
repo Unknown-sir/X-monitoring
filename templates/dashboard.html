@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}پنل کاربری | کلود کیوب
+{% block title %}پنل کاربری | آیرون کور کلود
 <script>
 (function() {
     const hasProv = {{ 'true' if servers|selectattr(16, 'equalto', 'provisioning')|list|length > 0 else 'false' }};
@@ -281,7 +281,7 @@
 <div class="card p-5 text-center mb-4 anim-fade-up">
     <div class="mb-3">
         <span class="stat-icon bg-primary-subtle mx-auto" style="width: 60px; height: 60px; font-size: 1.6rem;">
-            <i class="fas fa-cube"></i>
+            <i class="fas fa-microchip"></i>
         </span>
     </div>
     <h3 class="fw-bold mb-2" style="font-size: 1.15rem;">هنوز سروری در حساب شما فعال نیست</h3>

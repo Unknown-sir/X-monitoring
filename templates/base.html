@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}کلود کیوب | Cloud Cube{% endblock %}</title>
+    <title>{% block title %}آیرون کور کلود | IronCore Cloud{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -21,11 +21,11 @@
     <aside class="xm-sidebar" id="appSidebar">
         <a href="{{ url_for('dashboard') if has_perm('client_dashboard') else url_for('admin_tickets_page') }}" class="xm-sidebar-header">
             <span class="xm-logo-badge">
-                <i class="fas fa-cube"></i>
+                <i class="fas fa-microchip"></i>
             </span>
             <div>
-                <div class="xm-brand-title">کلود کیوب</div>
-                <span class="xm-brand-sub">Cloud Cube SaaS</span>
+                <div class="xm-brand-title">آیرون کور کلود</div>
+                <span class="xm-brand-sub">IronCore Cloud SaaS</span>
             </div>
         </a>
 
@@ -223,7 +223,7 @@
                 </button>
                 <div class="d-none d-sm-flex align-items-center gap-2 small">
                     <span class="pulse-dot"></span>
-                    <span class="fw-bold">Cloud Cube</span>
+                    <span class="fw-bold">IronCore Cloud</span>
                     <span class="badge bg-primary-subtle">{{ role_labels_fa.get(session.get('role', 'user'), 'کاربر') }}</span>
                 </div>
             </div>
@@ -288,7 +288,7 @@
         </main>
 
         <footer class="xm-footer">
-            Cloud Cube SaaS Platform • <span class="font-mono text-gold">@CloudCubeVPS</span>
+            IronCore Cloud SaaS Platform
         </footer>
     </div>
 </div>

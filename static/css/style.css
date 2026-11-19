@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Cloud Cube (کلود کیوب) — Luxury SaaS Cloud Console v5.0
+   IronCore Cloud (آیرون کور کلود) — Luxury SaaS Cloud Console v5.0
    Palette: Deep Navy (#111127) + Light (#F7F6FC) + Electric Violet (#8B5CF6 / #A78BFA)
    ========================================================================== */
 
@@ -1001,7 +1001,7 @@ body.light-mode .cc-plan-card {
 
 
 /* ==========================================================================
-   Cloud Cube v7.0 — Ultra-Luxury Web Animations, Aurora Mesh & Glass 2.0
+   IronCore Cloud v7.0 — Ultra-Luxury Web Animations, Aurora Mesh & Glass 2.0
    ========================================================================== */
 
 @keyframes auroraFloat {
@@ -1120,7 +1120,7 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
 
 
 /* ==========================================================================
-   Cloud Cube v8.0 — High-Converting SaaS Landing Page Styles
+   IronCore Cloud v8.0 — High-Converting SaaS Landing Page Styles
    ========================================================================== */
 .cc-trust-strip {
     background: linear-gradient(90deg, rgba(139, 92, 246, 0.10), rgba(56, 189, 248, 0.08), rgba(139, 92, 246, 0.10));
@@ -1212,7 +1212,7 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
 
 
 /* ==========================================================================
-   Cloud Cube v9.0 — 10Gbps Animated Cyber Grid, Marquee & Interactive Hero
+   IronCore Cloud v9.0 — 10Gbps Animated Cyber Grid, Marquee & Interactive Hero
    ========================================================================== */
 @keyframes gridScroll {
     0% { background-position: 0 0; }
@@ -1347,7 +1347,7 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
 
 
 /* ==========================================================================
-   Cloud Cube v10.0 — Luxury Animated Auth (Login & Register)
+   IronCore Cloud v10.0 — Luxury Animated Auth (Login & Register)
    ========================================================================== */
 @keyframes ccShake {
     0%, 100% { transform: translateX(0); }
@@ -1482,7 +1482,7 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
 
 
 /* ==========================================================================
-   Cloud Cube v11.0 — Floating Live Chat Widget Connected to Telegram Group
+   IronCore Cloud v11.0 — Floating Live Chat Widget Connected to Telegram Group
    ========================================================================== */
 .cc-chat-launcher {
     position: fixed;

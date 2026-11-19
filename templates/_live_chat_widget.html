@@ -10,7 +10,7 @@
         <div class="d-flex align-items-center gap-2">
             <span class="xm-logo-badge" style="width: 34px; height: 34px; font-size: 0.9rem;"><i class="fas fa-comments"></i></span>
             <div>
-                <div class="fw-bold" style="font-size: 0.9rem; color: #F7F6FC;">پشتیبانی آنلاین کلود کیوب</div>
+                <div class="fw-bold" style="font-size: 0.9rem; color: #F7F6FC;">پشتیبانی آنلاین آیرون کور کلود</div>
                 <div class="small" style="font-size: 0.7rem; color: #38BDF8;">متصل به گروه پشتیبانی تلگرام</div>
             </div>
         </div>
@@ -28,7 +28,7 @@
 
     <div class="cc-chat-body" id="ccChatBody">
         <div class="cc-chat-bubble admin">
-            <span class="cc-chat-meta">پشتیبانی کلود کیوب</span>
+            <span class="cc-chat-meta">پشتیبانی آیرون کور کلود</span>
             سلام! سوال یا درخواست خود را همینجا بنویسید؛ پیام شما مستقیماً به گروه پشتیبانی تلگرام ارسال می‌شود و پاسخ کارشناسان در همین پنجره نمایش داده خواهد شد.
         </div>
     </div>
@@ -82,7 +82,7 @@
         div.className = "cc-chat-bubble " + (m.sender === "admin" ? "admin" : "user");
         const meta = document.createElement("span");
         meta.className = "cc-chat-meta";
-        meta.innerText = m.sender_name || (m.sender === "admin" ? "پشتیبانی کلود کیوب" : "شما");
+        meta.innerText = m.sender_name || (m.sender === "admin" ? "پشتیبانی آیرون کور کلود" : "شما");
         const txt = document.createElement("div");
         txt.innerText = m.message_text;
         div.appendChild(meta);

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}مرکز تیکتینگ پشتیبانی و فروش | کلود کیوب{% endblock %}
+{% block title %}مرکز تیکتینگ پشتیبانی و فروش | آیرون کور کلود{% endblock %}
 {% block content %}
 
 <!-- Header & New Outbound Ticket Button -->
@@ -39,12 +39,12 @@
                     <option value="sales">بخش فروش و مشاوره</option>
                     <option value="technical">پشتیبانی فنی و سرور</option>
                     <option value="billing">امور مالی و فیش‌ها</option>
-                    <option value="management">مدیریت کلود کیوب</option>
+                    <option value="management">مدیریت آیرون کور کلود</option>
                 </select>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label">عنوان نمایشی فرستنده</label>
-                <input type="text" name="sender_badge" value="واحد فروش و پشتیبانی کلود کیوب" class="form-control form-control-sm">
+                <input type="text" name="sender_badge" value="واحد فروش و پشتیبانی آیرون کور کلود" class="form-control form-control-sm">
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label">اولویت</label>
@@ -132,7 +132,7 @@
                 <option value="technical" {% if f_dept == 'technical' %}selected{% endif %}>پشتیبانی فنی و سرور</option>
                 <option value="sales" {% if f_dept == 'sales' %}selected{% endif %}>بخش فروش و مشاوره</option>
                 <option value="billing" {% if f_dept == 'billing' %}selected{% endif %}>امور مالی و فیش‌ها</option>
-                <option value="management" {% if f_dept == 'management' %}selected{% endif %}>مدیریت کلود کیوب</option>
+                <option value="management" {% if f_dept == 'management' %}selected{% endif %}>مدیریت آیرون کور کلود</option>
             </select>
         </div>
         <div class="col-6 col-md-2">

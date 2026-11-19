@@ -215,7 +215,7 @@ def send_hourly_traffic_report_to_admin() -> tuple[bool, str]:
     hosts = c.fetchall()
 
     lines = [
-        "📊 *گزارش ساعتی مصرف حجم کلود کیوب*",
+        "📊 *گزارش ساعتی مصرف حجم آیرون کور کلود*",
         f"⚙️ *معیار محاسبه فعلی:* {mode_fa}",
         f"🖥️ *سرور اصلی پنل (دانلود کل):* `{main_dl_gib:.2f} GiB`",
         "",
@@ -494,7 +494,7 @@ def init_db():
         ("telegram_bot_token", TELEGRAM_TOKEN if TELEGRAM_TOKEN != "YOUR_BOT_TOKEN" else "", now_init),
         ("admin_chat_id", ADMIN_CHAT_ID if ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "", now_init),
         ("bank_card_number", "6037-9975-0000-0000", now_init),
-        ("bank_card_holder", "مدیریت کلود کیوب", now_init),
+        ("bank_card_holder", "مدیریت آیرون کور کلود", now_init),
         ("bank_sheba", "IR000000000000000000000000", now_init),
         ("bank_name", "بانک ملی / ملت", now_init),
         ("require_kyc_global", "0", now_init),
@@ -988,7 +988,7 @@ def get_system_settings() -> dict:
         "telegram_bot_token": TELEGRAM_TOKEN if TELEGRAM_TOKEN != "YOUR_BOT_TOKEN" else "",
         "admin_chat_id": ADMIN_CHAT_ID if ADMIN_CHAT_ID != "YOUR_CHAT_ID" else "",
         "bank_card_number": "6037-9975-0000-0000",
-        "bank_card_holder": "مدیریت کلود کیوب",
+        "bank_card_holder": "مدیریت آیرون کور کلود",
         "bank_sheba": "IR000000000000000000000000",
         "bank_name": "بانک ملی / ملت",
         "require_kyc_global": "0",
@@ -1768,8 +1768,8 @@ def inject_user_wallet():
         "panel_modules": PANEL_MODULES,
         "role_labels_fa": ROLE_LABELS_FA,
         "sys_cfg": sys_cfg,
-        "brand_name": "کلود کیوب",
-        "brand_en": "Cloud Cube",
+        "brand_name": "آیرون کور کلود",
+        "brand_en": "IronCore Cloud",
     }
 
 
@@ -1813,7 +1813,7 @@ def send_database_backup_to_owner(force: bool = False) -> tuple[bool, str]:
         src_conn.close()
 
         caption = (
-            f"💾 *بکاپ خودکار دیتابیس کلود کیوب*\n"
+            f"💾 *بکاپ خودکار دیتابیس آیرون کور کلود*\n"
             f"📅 زمان: `{datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}`\n"
             f"🔒 شامل تمام کاربران، سرورها، فیش‌ها و تیکت‌ها"
         )
@@ -2424,7 +2424,7 @@ DEPT_LABELS = {
     "technical": "پشتیبانی فنی و سرور",
     "sales": "بخش فروش و مشاوره",
     "billing": "امور مالی و فیش‌ها",
-    "management": "مدیریت کلود کیوب",
+    "management": "مدیریت آیرون کور کلود",
 }
 
 PRIORITY_LABELS = {
@@ -2850,7 +2850,7 @@ def tickets_page():
                 t_uid = tu[0] if tu else target_uid
                 t_uname = tu[1] if tu else f"user_{target_uid}"
                 t_tg = tu[2] if tu else ""
-                sender_badge = request.form.get("sender_badge", DEPT_LABELS.get(department, "پشتیبانی کلود کیوب")).strip()
+                sender_badge = request.form.get("sender_badge", DEPT_LABELS.get(department, "پشتیبانی آیرون کور کلود")).strip()
                 c.execute(
                     """INSERT INTO web_tickets (
                         user_id, username, subject, message, admin_reply, status, department, priority, server_id, created_at, updated_at
@@ -2983,7 +2983,7 @@ def admin_tickets_page():
             message = request.form.get("message", "").strip()
             department = request.form.get("department", "sales").strip()
             priority = request.form.get("priority", "high").strip()
-            sender_badge = request.form.get("sender_badge", "واحد فروش و پشتیبانی کلود کیوب").strip()
+            sender_badge = request.form.get("sender_badge", "واحد فروش و پشتیبانی آیرون کور کلود").strip()
 
             c.execute("SELECT id, username, telegram_chat_id FROM users WHERE id=?", (target_user_id,))
             u_row = c.fetchone()
@@ -3187,7 +3187,7 @@ def ticket_detail_page(ticket_id):
             if msg_text:
                 if is_staff:
                     sender_role = "admin"
-                    sender_badge = request.form.get("sender_badge", "پشتیبانی فنی کلود کیوب").strip()
+                    sender_badge = request.form.get("sender_badge", "پشتیبانی فنی آیرون کور کلود").strip()
                     next_status = request.form.get("next_status", "answered").strip()
                     c.execute(
                         "UPDATE web_tickets SET admin_reply=?, status=?, updated_at=? WHERE id=?",
@@ -3282,7 +3282,7 @@ def ticket_detail_page(ticket_id):
                     "id": 0,
                     "sender_role": "admin",
                     "sender_name": "Admin",
-                    "sender_badge": "پشتیبانی کلود کیوب",
+                    "sender_badge": "پشتیبانی آیرون کور کلود",
                     "message": ticket["admin_reply"],
                     "attachment_filename": None,
                     "created_at": ticket["updated_at"],
@@ -3344,7 +3344,7 @@ def ticket_detail_page(ticket_id):
 @perm_required("tickets_reply")
 def reply_web_ticket(ticket_id):
     reply_text = request.form.get("admin_reply", "").strip()
-    sender_badge = request.form.get("sender_badge", "پشتیبانی کلود کیوب").strip()
+    sender_badge = request.form.get("sender_badge", "پشتیبانی آیرون کور کلود").strip()
     conn = get_db_connection()
     c = conn.cursor()
     if reply_text:
@@ -3692,7 +3692,7 @@ def api_live_chat_messages():
             {
                 "id": r[0],
                 "sender": r[1],
-                "sender_name": r[2] or ("پشتیبانی کلود کیوب" if r[1] == "admin" else "شما"),
+                "sender_name": r[2] or ("پشتیبانی آیرون کور کلود" if r[1] == "admin" else "شما"),
                 "message_text": r[3],
                 "created_at": r[4],
             }
@@ -5802,7 +5802,7 @@ def _handle_tg_update(upd: dict):
                     sess_id = int(m_chat.group(1))
             if sess_id:
                 adm_from = msg.get("from", {})
-                adm_name = (f"{adm_from.get('first_name', '')} {adm_from.get('last_name', '')}".strip() or "پشتیبانی کلود کیوب")
+                adm_name = (f"{adm_from.get('first_name', '')} {adm_from.get('last_name', '')}".strip() or "پشتیبانی آیرون کور کلود")
                 now_iso = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
                 c.execute(
                     "INSERT INTO live_chat_messages (session_id, sender, sender_name, message_text, tg_message_id, created_at) VALUES (?, 'admin', ?, ?, ?, ?)",
@@ -5848,7 +5848,7 @@ def _handle_tg_update(upd: dict):
                 ]
             }
             welcome = (
-                f"✨ سلام *{first_name}* عزیز، به ربات رسمی *کلود کیوب (Cloud Cube)* خوش آمدید!\n\n"
+                f"✨ سلام *{first_name}* عزیز، به ربات رسمی *آیرون کور کلود (IronCore Cloud)* خوش آمدید!\n\n"
                 f"🆔 چت آیدی شما: `{chat_id}`\n"
                 "می‌توانید این شناسه را در بخش پروفایل پنل وب وارد کنید تا وضعیت فیش‌های واریزی و هشدارهای ترافیک برایتان ارسال شود."
             )
