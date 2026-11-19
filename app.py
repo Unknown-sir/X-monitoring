@@ -1929,6 +1929,22 @@ def get_active_plans():
     return plans
 
 
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    return jsonify({
+        "name": "آیرون کور کلود | IronCore Cloud",
+        "short_name": "IronCore",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#111127",
+        "theme_color": "#8B5CF6",
+        "lang": "fa",
+        "dir": "rtl",
+        "icons": [{"src": "/static/img/favicon.svg", "sizes": "any", "type": "image/svg+xml"}],
+    })
+
+
 @app.route("/robots.txt")
 def robots_txt():
     base_url = request.url_root.rstrip("/")
@@ -1937,7 +1953,9 @@ def robots_txt():
         "Allow: /\n"
         "Allow: /login\n"
         "Allow: /register\n"
+        "Allow: /static/\n"
         "Disallow: /admin\n"
+        "Disallow: /server/\n"
         "Disallow: /dashboard\n"
         "Disallow: /api/\n"
         f"Sitemap: {base_url}/sitemap.xml\n"
