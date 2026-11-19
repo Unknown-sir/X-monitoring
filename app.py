@@ -401,6 +401,18 @@ def init_db():
             active INTEGER DEFAULT 1
         )"""
     )
+    c.execute("PRAGMA table_info(vps_plans)")
+    vp_cols = [info[1] for info in c.fetchall()]
+    for col_n, col_t in [
+        ("promo_price_toman", "INTEGER DEFAULT NULL"),
+        ("promo_label", "TEXT DEFAULT 'تخفیف بلک فرایدی'"),
+        ("promo_active", "INTEGER DEFAULT 0"),
+    ]:
+        if col_n not in vp_cols:
+            try:
+                c.execute(f"ALTER TABLE vps_plans ADD COLUMN {col_n} {col_t}")
+            except Exception:
+                pass
     c.execute(
         """CREATE TABLE IF NOT EXISTS web_tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1184,7 +1196,10 @@ def _update_admin_telegram_receipt_status(req_row: dict, final_status_line: str)
 
 def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str, os_template_id: int | None = None) -> str:
     c.execute(
-        "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman FROM vps_plans WHERE id=?",
+        "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, "
+        "CASE WHEN COALESCE(promo_active, 0)=1 AND promo_price_toman IS NOT NULL AND promo_price_toman > 0 AND promo_price_toman < price_toman "
+        "THEN promo_price_toman ELSE price_toman END "
+        "FROM vps_plans WHERE id=?",
         (plan_id,),
     )
     plan_row = c.fetchone()
@@ -1843,11 +1858,18 @@ def get_active_plans():
     conn = get_db_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active "
+        "SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active, "
+        "promo_price_toman, COALESCE(promo_label, 'تخفیف بلک فرایدی'), COALESCE(promo_active, 0) "
         "FROM vps_plans WHERE active=1 ORDER BY price_toman ASC"
     )
-    plans = [
-        {
+    plans = []
+    for r in c.fetchall():
+        orig_p = int(r[8] or 0)
+        p_price = int(r[11]) if r[11] is not None and str(r[11]).strip() != "" else None
+        p_active = bool(r[13]) and p_price is not None and 0 < p_price < orig_p
+        eff_p = p_price if p_active else orig_p
+        disc_pct = int(round((1 - (eff_p / orig_p)) * 100)) if (p_active and orig_p > 0) else 0
+        plans.append({
             "id": r[0],
             "code": r[1],
             "name_fa": r[2],
@@ -1856,12 +1878,15 @@ def get_active_plans():
             "ram_gb": r[5],
             "disk_gb": r[6],
             "traffic_gib": r[7],
-            "price_toman": r[8],
+            "price_toman": orig_p,
             "badge": r[9],
             "active": bool(r[10]),
-        }
-        for r in c.fetchall()
-    ]
+            "promo_price_toman": p_price,
+            "promo_label": r[12] or "تخفیف بلک فرایدی",
+            "promo_active": p_active,
+            "effective_price": eff_p,
+            "discount_pct": disc_pct,
+        })
     conn.close()
     return plans
 
@@ -2156,7 +2181,10 @@ def order_vps_page():
         conn = get_db_connection()
         c = conn.cursor()
         c.execute(
-            "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman FROM vps_plans WHERE id=? AND active=1",
+            "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, "
+            "CASE WHEN COALESCE(promo_active, 0)=1 AND promo_price_toman IS NOT NULL AND promo_price_toman > 0 AND promo_price_toman < price_toman "
+            "THEN promo_price_toman ELSE price_toman END "
+            "FROM vps_plans WHERE id=? AND active=1",
             (plan_id,),
         )
         plan_row = c.fetchone()
@@ -3385,6 +3413,11 @@ def manage_plans_page():
                 if k in request.form:
                     set_system_setting(k, request.form.get(k, "0"))
             upgrade_msg = "تعرفه‌های ارتقای منابع و ظرفیت کل سرورها با موفقیت ذخیره شد."
+        elif request.form.get("form_type") == "toggle_all_promo":
+            set_state = 1 if request.form.get("promo_state") == "1" else 0
+            c.execute("UPDATE vps_plans SET promo_active=?", (set_state,))
+            conn.commit()
+            upgrade_msg = "✅ تخفیف مناسبتی برای همه پلن‌ها فعال شد." if set_state else "تخفیف مناسبتی برای همه پلن‌ها غیرفعال شد."
         else:
             plan_id = request.form.get("plan_id")
             name_fa = request.form.get("name_fa", "").strip()
@@ -3393,26 +3426,28 @@ def manage_plans_page():
             disk_gb = int(request.form.get("disk_gb", 20) or 20)
             traffic_gib = float(request.form.get("traffic_gib", 1000) or 1000)
             price_toman = int(request.form.get("price_toman", 1190000) or 1190000)
+            promo_raw = (request.form.get("promo_price_toman") or "").strip()
+            promo_price = int(promo_raw) if promo_raw.isdigit() and int(promo_raw) > 0 else None
+            promo_label = (request.form.get("promo_label") or "تخفیف بلک فرایدی").strip()
+            promo_active = 1 if request.form.get("promo_active") == "1" else 0
             if plan_id:
                 c.execute(
-                    "UPDATE vps_plans SET name_fa=?, cpus=?, ram_gb=?, disk_gb=?, traffic_gib=?, price_toman=? WHERE id=?",
-                    (name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman, int(plan_id)),
+                    "UPDATE vps_plans SET name_fa=?, cpus=?, ram_gb=?, disk_gb=?, traffic_gib=?, price_toman=?, promo_price_toman=?, promo_label=?, promo_active=? WHERE id=?",
+                    (name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman, promo_price, promo_label, promo_active, int(plan_id)),
                 )
                 conn.commit()
-    c.execute("SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active FROM vps_plans ORDER BY price_toman ASC")
+                upgrade_msg = f"تغییرات پلن {name_fa} ذخیره شد."
+    c.execute(
+        "SELECT id, code, name_fa, name_en, cpus, ram_gb, disk_gb, traffic_gib, price_toman, badge, active, "
+        "promo_price_toman, COALESCE(promo_label, 'تخفیف بلک فرایدی'), COALESCE(promo_active, 0) "
+        "FROM vps_plans ORDER BY price_toman ASC"
+    )
     plans = [
         {
-            "id": r[0],
-            "code": r[1],
-            "name_fa": r[2],
-            "name_en": r[3],
-            "cpus": r[4],
-            "ram_gb": r[5],
-            "disk_gb": r[6],
-            "traffic_gib": r[7],
-            "price_toman": r[8],
-            "badge": r[9],
-            "active": bool(r[10]),
+            "id": r[0], "code": r[1], "name_fa": r[2], "name_en": r[3],
+            "cpus": r[4], "ram_gb": r[5], "disk_gb": r[6], "traffic_gib": r[7],
+            "price_toman": r[8], "badge": r[9], "active": bool(r[10]),
+            "promo_price_toman": r[11], "promo_label": r[12] or "تخفیف بلک فرایدی", "promo_active": bool(r[13]),
         }
         for r in c.fetchall()
     ]
@@ -3744,11 +3779,18 @@ def _run_domain_ssl_job(domain: str, ssl_email: str):
     try:
         set_prog(15, "در حال بررسی پیش‌نیازها (Nginx و Certbot)...")
         if not shutil.which("nginx") or not shutil.which("certbot"):
-            set_prog(28, "در حال نصب خودکار Nginx و Certbot روی سرور...")
+            set_prog(24, "در حال به‌روزرسانی مخازن اوبونتو (IPv4 سریع)...")
             if shutil.which("apt-get"):
+                apt_opts = "-o Acquire::ForceIPv4=true -o Acquire::http::Timeout=20 -o Acquire::Retries=2"
+                upd = subprocess.run(
+                    ["bash", "-lc", f"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get {apt_opts} update -qq"],
+                    capture_output=True, text=True, timeout=300
+                )
+                logs.append(upd.stdout + upd.stderr)
+                set_prog(34, "در حال نصب Nginx و Certbot روی اوبونتو (ممکن است ۱ تا ۳ دقیقه طول بکشد)...")
                 inst = subprocess.run(
-                    ["bash", "-lc", "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx certbot python3-certbot-nginx"],
-                    capture_output=True, text=True, timeout=180
+                    ["bash", "-lc", f"DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get {apt_opts} install -y -qq -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold nginx certbot python3-certbot-nginx"],
+                    capture_output=True, text=True, timeout=600
                 )
                 logs.append(inst.stdout + inst.stderr)
             elif shutil.which("dnf") or shutil.which("yum"):
@@ -3836,6 +3878,11 @@ def _run_domain_ssl_job(domain: str, ssl_email: str):
             set_system_setting("panel_ssl_status", "Nginx فعال (خطا در دریافت SSL)")
             simple_err = _simplify_ssl_error(cert_res.stderr + "\n" + cert_res.stdout, domain)
             set_prog(85, "دریافت گواهی SSL با خطا متوقف شد", status="error", err_simple=simple_err)
+    except subprocess.TimeoutExpired:
+        logs.append("TimeoutExpired during apt/certbot")
+        set_system_setting("panel_ssl_status", "خطا (اتمام زمان نصب)")
+        set_system_setting("panel_ssl_log", "\n".join(logs)[-3500:])
+        set_prog(0, "زمان نصب به پایان رسید", status="error", err_simple="دانلود بسته‌ها از مخزن اوبونتو بیش از حد طول کشید. یک‌بار در SSH سرور دستور apt update && apt install -y nginx certbot python3-certbot-nginx را بزنید و سپس دوباره اینجا کلیک کنید.")
     except Exception as ex:
         logs.append(str(ex))
         set_system_setting("panel_ssl_status", "خطا در اجرا")

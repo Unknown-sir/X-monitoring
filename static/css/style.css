@@ -1604,3 +1604,46 @@ body.light-mode .card, body.light-mode .cc-server-card, body.light-mode .cc-plan
     border-top: 1px solid var(--border-subtle);
     background: rgba(12, 12, 29, 0.85);
 }
+
+
+/* ==========================================================================
+   IronCore Cloud — Animated Black Friday / Seasonal Discount Badges & Prices
+   ========================================================================== */
+@keyframes promoShimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.cc-old-price {
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    text-decoration: line-through;
+    text-decoration-color: #F43F5E;
+    text-decoration-thickness: 2px;
+    opacity: 0.78;
+    display: inline-block;
+}
+
+.cc-promo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(90deg, #F43F5E, #8B5CF6, #F59E0B, #F43F5E);
+    background-size: 250% 250%;
+    animation: promoShimmer 3.5s ease infinite;
+    box-shadow: 0 4px 16px rgba(244, 63, 94, 0.42);
+    margin: 4px 0;
+}
+
+.cc-new-price {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #34D399;
+    text-shadow: 0 0 18px rgba(52, 211, 153, 0.35);
+}

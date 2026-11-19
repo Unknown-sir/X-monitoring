@@ -58,6 +58,28 @@
     </form>
 </div>
 
+<!-- Global Seasonal Discount Quick Control -->
+<div class="card p-3 mb-4 anim-fade-up" style="border: 1px solid rgba(244, 63, 94, 0.45); background: linear-gradient(135deg, rgba(244, 63, 94, 0.10), rgba(139, 92, 246, 0.10));">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <span class="cc-promo-badge"><i class="fas fa-fire"></i> تخفیف مناسبتی (بلک فرایدی)</span>
+            <span class="small text-muted ms-2">قیمت قبلی حفظ و خط‌خورده نمایش داده می‌شود؛ تا زمانی که غیرفعال نکنید خریدها با قیمت تخفیفی انجام می‌شود.</span>
+        </div>
+        <div class="d-flex gap-2">
+            <form method="POST" action="{{ url_for('manage_plans_page') }}" class="m-0">
+                <input type="hidden" name="form_type" value="toggle_all_promo">
+                <input type="hidden" name="promo_state" value="1">
+                <button type="submit" class="btn btn-sm btn-success rounded-pill px-3"><i class="fas fa-bolt"></i> فعال‌سازی برای همه</button>
+            </form>
+            <form method="POST" action="{{ url_for('manage_plans_page') }}" class="m-0">
+                <input type="hidden" name="form_type" value="toggle_all_promo">
+                <input type="hidden" name="promo_state" value="0">
+                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3"><i class="fas fa-ban"></i> غیرفعال کردن همه</button>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Base VPS Plans -->
 <div class="row g-3 anim-fade-up">
     {% for plan in plans %}
@@ -94,8 +116,18 @@
                     </div>
                 </div>
                 <div>
-                    <label class="form-label">قیمت ماهانه (تومان)</label>
+                    <label class="form-label">قیمت اصلی ماهانه (تومان)</label>
                     <input type="number" name="price_toman" value="{{ plan.price_toman }}" class="form-control form-control-sm font-mono text-gold fw-bold" required>
+                </div>
+                <div class="p-2 rounded" style="background: rgba(244, 63, 94, 0.08); border: 1px dashed rgba(244, 63, 94, 0.35);">
+                    <label class="form-label text-danger small mb-1"><i class="fas fa-fire"></i> قیمت تخفیف مناسبتی (تومان)</label>
+                    <input type="number" name="promo_price_toman" value="{{ plan.promo_price_toman or '' }}" class="form-control form-control-sm font-mono mb-2" placeholder="مثلاً 890000">
+                    <label class="form-label small mb-1">متن تگ تخفیف</label>
+                    <input type="text" name="promo_label" value="{{ plan.promo_label or 'تخفیف بلک فرایدی' }}" class="form-control form-control-sm mb-2">
+                    <label class="d-flex align-items-center gap-2 small" style="cursor: pointer;">
+                        <input type="checkbox" name="promo_active" value="1" {% if plan.promo_active %}checked{% endif %} style="accent-color: #F43F5E;">
+                        <span>تخفیف فعال باشد</span>
+                    </label>
                 </div>
                 <button type="submit" class="btn btn-sm btn-primary rounded-pill mt-2">
                     <i class="fas fa-save"></i> ذخیره پلن

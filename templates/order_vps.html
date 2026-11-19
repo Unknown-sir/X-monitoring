@@ -26,9 +26,19 @@
                     <input type="radio" name="plan_id" value="{{ plan.id }}" {% if plan.code == selected_code or loop.first %}checked{% endif %} style="accent-color: #8B5CF6; transform: scale(1.2);">
                 </div>
                 <h3 class="fw-bold mb-1" style="font-size: 1.15rem;">{{ plan.name_fa }}</h3>
+                {% if plan.promo_active and plan.promo_price_toman %}
+                <div class="my-2">
+                    <div><span class="cc-old-price font-mono">{{ "{:,}".format(plan.price_toman) }} تومان</span></div>
+                    <div><span class="cc-promo-badge"><i class="fas fa-fire"></i> {{ plan.promo_label }} ({{ plan.discount_pct }}٪)</span></div>
+                    <div class="cc-new-price font-mono" style="font-size: 1.35rem;">
+                        {{ "{:,}".format(plan.effective_price) }} <span class="small fw-normal text-muted" style="font-size: 0.8rem;">تومان</span>
+                    </div>
+                </div>
+                {% else %}
                 <div class="cc-plan-price" style="font-size: 1.35rem;">
                     {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted">تومان</span>
                 </div>
+                {% endif %}
                 <ul class="cc-spec-list mb-0">
                     <li><span class="text-muted">CPU</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
                     <li><span class="text-muted">RAM</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
