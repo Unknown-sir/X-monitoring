@@ -114,7 +114,8 @@
         </a>
 
         <nav class="d-none d-lg-flex align-items-center gap-4 small fw-bold" aria-label="منوی اصلی">
-            <a href="#plans" style="color: var(--text-main);">پلن‌ها و قیمت</a>
+            <a href="#plans" style="color: var(--text-main);">پلن‌های ماهانه</a>
+            <a href="#hourly-plans" style="color: var(--info);">سرور ساعتی</a>
             <a href="#steps" style="color: var(--text-main);">مراحل تحویل</a>
             <a href="#why-us" style="color: var(--text-main);">امکانات</a>
             <a href="#faq" style="color: var(--text-main);">سوالات متداول</a>
@@ -368,6 +369,48 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- Hourly VPS Plans Section -->
+    <section id="hourly-plans" class="py-4 mb-5">
+        <div class="container">
+            <div class="text-center mb-4">
+                <span class="badge bg-info-subtle font-mono mb-2"><i class="fas fa-clock me-1"></i> Pay-As-You-Go Hourly Cloud</span>
+                <h2 class="fw-extrabold mb-2" style="font-size: 1.75rem;">تعرفه سرورهای مجازی ساعتی آیرون کور کلود</h2>
+                <p class="text-muted small">کسر خودکار از کیف پول بر اساس مصرف واقعی (تعرفه ماهانه + ۲۰٪) • پیش‌پرداخت ۱۲ ساعت + ۱۰ گیگابایت ترافیک در زمان تحویل</p>
+            </div>
+
+            <div class="row g-4">
+                {% for plan in plans %}
+                <div class="col-12 col-md-6 col-xl-3">
+                    <div class="cc-plan-card" style="border-color: rgba(56, 189, 248, 0.35);">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-info-subtle font-mono">ساعتی</span>
+                            <span class="small text-muted font-mono">{{ plan.name_en }}</span>
+                        </div>
+                        <h3 class="fw-bold mb-1" style="font-size: 1.2rem;">{{ plan.name_fa }} (ساعتی)</h3>
+                        <div class="cc-plan-price text-info" style="font-size: 1.45rem;">
+                            {{ "{:,}".format(plan.hourly_price) }} <span class="small fw-normal text-muted" style="font-size: 0.82rem;">تومان / ساعت</span>
+                        </div>
+                        <div class="small text-muted mb-2 font-mono" style="font-size: 0.76rem;">
+                            هر گیگابایت ترافیک: {{ "{:,}".format(((addon_tariffs.tb_eff / 1000.0) * 1.20)|round|int if addon_tariffs else 900) }} تومان
+                        </div>
+                        <ul class="cc-spec-list">
+                            <li><span class="text-muted">پردازنده</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
+                            <li><span class="text-muted">حافظه رم</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
+                            <li><span class="text-muted">هارد SSD</span><strong class="font-mono">{{ plan.disk_gb }} GB</strong></li>
+                            <li><span class="text-muted">پورت شبکه</span><strong class="font-mono text-info">10 Gbps</strong></li>
+                        </ul>
+                        <a href="{{ url_for('order_vps_page', plan=plan.code, mode='hourly') if logged_in else url_for('register') }}" class="btn w-100 mt-auto rounded-pill btn-outline-info">
+                            <i class="fas fa-clock"></i>
+                            <span>سفارش ساعتی</span>
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
         </div>
     </section>

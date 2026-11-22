@@ -175,9 +175,13 @@
             {% endif %}
 
             {% if has_perm('client_order') %}
-            <a href="{{ url_for('order_vps_page') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' %}active{% endif %}">
+            <a href="{{ url_for('order_vps_page', mode='monthly') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' and request.args.get('mode', 'monthly') != 'hourly' %}active{% endif %}">
                 <i class="fas fa-rocket text-gold"></i>
-                <span>خرید سرور مجازی</span>
+                <span>خرید سرور ماهانه و تست</span>
+            </a>
+            <a href="{{ url_for('order_vps_page', mode='hourly') }}" class="xm-nav-item {% if request.endpoint == 'order_vps_page' and request.args.get('mode') == 'hourly' %}active{% endif %}">
+                <i class="fas fa-clock text-info"></i>
+                <span>خرید سرور ساعتی</span>
             </a>
             {% endif %}
 
