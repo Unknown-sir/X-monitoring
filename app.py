@@ -1267,11 +1267,15 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
     init_last_billed = None
     init_billed_gib = 0.0
     if billing_type == "test_1h":
+        # Test server is strictly limited to base resources (1 Core, 2GB RAM, 20GB SSD, 50 GiB)
+        cpus = 1
+        ram_mb = 2048
+        disk_gb = 20
         expires_at_str = now_dt.strftime("%Y-%m-%d")
         eff_traffic_limit = 50.0
         eff_hourly_rate = 0
         eff_monthly_price = 150000
-        eff_plan_label = "سرور تست ۱ ساعته"
+        eff_plan_label = "سرور تست ۱ ساعته (امکانات پایه)"
         init_test_exp = (now_dt + datetime.timedelta(hours=1)).isoformat()
     elif billing_type == "hourly":
         expires_at_str = "ساعتی (پیش‌پرداخت ۱۲ساعت + ۱۰G)"
@@ -2283,6 +2287,9 @@ def order_vps_page():
     plans = get_active_plans()
     os_templates = get_active_os_templates()
     selected_code = request.args.get("plan", "gold")
+    store_mode = request.args.get("mode", "monthly").strip()
+    if store_mode not in ("monthly", "hourly"):
+        store_mode = "monthly"
     error_msg = None
     success_msg = None
 
@@ -2329,7 +2336,7 @@ def order_vps_page():
                 if request.form.get("hourly_confirm") != "1":
                     conn.close()
                     error_msg = "برای خرید سرور ساعتی، باید تاییدیه کسر پیش‌پرداخت ۱۲ ساعت + ۱۰ گیگابایت ترافیک و محدودیت حذف ۱۲ ساعته را تیک بزنید."
-                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg)
+                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, store_mode=store_mode, error_msg=error_msg)
                 _ad_ord = get_effective_addon_tariffs()
                 hr_base = int(round((price_toman / 720.0) * 1.20))
                 gib_10_cost = int(round(10.0 * ((_ad_ord["tb_eff"] / 1000.0) * 1.20)))
@@ -2348,7 +2355,7 @@ def order_vps_page():
                 if c.rowcount == 0:
                     conn.close()
                     error_msg = f"موجودی کیف پول شما برای شروع ({charge_now:,} تومان) کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید یا روش کارت به کارت را انتخاب نمایید."
-                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg)
+                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, store_mode=store_mode, error_msg=error_msg)
 
                 _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password, os_template_id=os_template_id, billing_type=billing_type)
                 conn.commit()
@@ -2377,7 +2384,7 @@ def order_vps_page():
                     notify_admin_new_receipt(req_id, session.get("username", "user"), title, charge_now, tracking_note, file_or_err)
                     success_msg = f"سفارش {p_name_fa} و فیش واریزی شما (#{req_id}) ثبت شد. به محض تایید ادمین، سرور به صورت خودکار ساخته و در پنل شما فعال می‌شود."
 
-    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
+    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, store_mode=store_mode, error_msg=error_msg, success_msg=success_msg)
 
 
 @app.route("/server/<int:server_id>/power/<action>", methods=["POST"])

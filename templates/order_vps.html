@@ -1,46 +1,32 @@
 {% extends "base.html" %}
-{% block title %}سفارش سرور مجازی | آیرون کور کلود
-<script>
-const PLAN_HOURLY_MAP = {
-    {% for plan in plans %}"{{ plan.id }}": {{ plan.hourly_price }},{% endfor %}
-};
-const GIB_10_COST = {{ ((addon_tariffs.tb_eff / 1000.0) * 1.20 * 10)|round|int if addon_tariffs else 9000 }};
-
-function updateHourlyUpfrontPreview() {
-    const checkedPlan = document.querySelector("input[name='plan_id']:checked");
-    const pid = checkedPlan ? checkedPlan.value : "";
-    const hrRate = PLAN_HOURLY_MAP[pid] || 1983;
-    const totalUpfront = (12 * hrRate) + GIB_10_COST;
-    const prevEl = document.getElementById("hourlyUpfrontPreview");
-    if (prevEl) prevEl.innerText = totalUpfront.toLocaleString("en-US");
-}
-
-function toggleBillingMode(val) {
-    document.getElementById("test1hNotice").style.display = (val === "test_1h") ? "block" : "none";
-    document.getElementById("hourlyNotice").style.display = (val === "hourly") ? "block" : "none";
-    const chk = document.getElementById("hourlyConfirmChk");
-    if (chk) chk.required = (val === "hourly");
-    const pmSel = document.querySelector("select[name='pay_method']");
-    const recBox = document.getElementById("vpsReceiptBox");
-    if (val === "hourly" && pmSel) {
-        pmSel.value = "wallet";
-        if (recBox) recBox.style.display = "none";
-    }
-    updateHourlyUpfrontPreview();
-}
-
-document.querySelectorAll("input[name='plan_id']").forEach(el => {
-    el.addEventListener("change", updateHourlyUpfrontPreview);
-});
-document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
-</script>
-{% endblock %}
+{% block title %}{% if store_mode == 'hourly' %}سفارش سرور ساعتی{% else %}سفارش سرور ماهانه و تست{% endif %} | آیرون کور کلود{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
-    <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
-        <i class="fas fa-rocket text-primary me-1"></i> سفارش سرور مجازی ESXi
-    </h1>
-    <span class="badge bg-purple font-mono">موجودی کیف پول: {{ "{:,}".format(user_wallet|default(0)) }} تومان</span>
+    <div>
+        <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
+            {% if store_mode == 'hourly' %}
+            <i class="fas fa-clock text-info me-1"></i> فروش سرور مجازی ساعتی (Pay-As-You-Go)
+            {% else %}
+            <i class="fas fa-rocket text-primary me-1"></i> فروش سرور مجازی ماهانه و سرور تست ۱ ساعته
+            {% endif %}
+        </h1>
+        <span class="small text-muted">
+            {% if store_mode == 'hourly' %}
+            تعرفه ساعتی بر اساس پلن ماهانه + ۲۰٪ محاسبه شده و به صورت ساعتی از کیف پول کسر می‌گردد.
+            {% else %}
+            پلن ماهانه ۳۰ روزه یا سرور تست ۱ ساعته (امکانات پایه) را انتخاب کنید.
+            {% endif %}
+        </span>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a href="{{ url_for('order_vps_page', mode='monthly') }}" class="btn btn-sm {% if store_mode != 'hourly' %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3">
+            <i class="fas fa-calendar-alt"></i> بخش سرور ماهانه و تست
+        </a>
+        <a href="{{ url_for('order_vps_page', mode='hourly') }}" class="btn btn-sm {% if store_mode == 'hourly' %}btn-info text-dark fw-bold{% else %}btn-outline-info{% endif %} rounded-pill px-3">
+            <i class="fas fa-clock"></i> بخش سرور ساعتی
+        </a>
+        <span class="badge bg-purple font-mono">موجودی: {{ "{:,}".format(user_wallet|default(0)) }} تومان</span>
+    </div>
 </div>
 
 {% if error_msg %}
@@ -50,7 +36,7 @@ document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
 <div class="alert alert-success"><i class="fas fa-check-circle me-1"></i> {{ success_msg }}</div>
 {% endif %}
 
-<form method="POST" action="{{ url_for('order_vps_page') }}" enctype="multipart/form-data">
+<form method="POST" action="{{ url_for('order_vps_page', mode=store_mode) }}" enctype="multipart/form-data">
     <!-- Plan Cards -->
     <div class="row g-3 mb-4 anim-fade-up delay-1">
         {% for plan in plans %}
@@ -61,19 +47,30 @@ document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
                     <input type="radio" name="plan_id" value="{{ plan.id }}" {% if plan.code == selected_code or loop.first %}checked{% endif %} style="accent-color: #8B5CF6; transform: scale(1.2);">
                 </div>
                 <h3 class="fw-bold mb-1" style="font-size: 1.15rem;">{{ plan.name_fa }}</h3>
-                {% if plan.promo_active and plan.promo_price_toman %}
-                <div class="my-2">
-                    <div><span class="cc-old-price font-mono">{{ "{:,}".format(plan.price_toman) }} تومان</span></div>
-                    <div><span class="cc-promo-badge"><i class="fas fa-fire"></i> {{ plan.promo_label }} ({{ plan.discount_pct }}٪)</span></div>
-                    <div class="cc-new-price font-mono" style="font-size: 1.35rem;">
-                        {{ "{:,}".format(plan.effective_price) }} <span class="small fw-normal text-muted" style="font-size: 0.8rem;">تومان</span>
-                    </div>
+
+                {% if store_mode == 'hourly' %}
+                <div class="cc-plan-price text-info" style="font-size: 1.35rem;">
+                    {{ "{:,}".format(plan.hourly_price) }} <span class="small fw-normal text-muted" style="font-size: 0.78rem;">تومان / ساعت</span>
+                </div>
+                <div class="small text-muted mb-2 font-mono" style="font-size: 0.75rem;">
+                    ترافیک: {{ "{:,}".format(((addon_tariffs.tb_eff / 1000.0) * 1.20)|round|int if addon_tariffs else 900) }} ت / GiB
                 </div>
                 {% else %}
-                <div class="cc-plan-price" style="font-size: 1.35rem;">
-                    {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted">تومان</span>
-                </div>
+                    {% if plan.promo_active and plan.promo_price_toman %}
+                    <div class="my-2">
+                        <div><span class="cc-old-price font-mono">{{ "{:,}".format(plan.price_toman) }} تومان</span></div>
+                        <div><span class="cc-promo-badge"><i class="fas fa-fire"></i> {{ plan.promo_label }} ({{ plan.discount_pct }}٪)</span></div>
+                        <div class="cc-new-price font-mono" style="font-size: 1.35rem;">
+                            {{ "{:,}".format(plan.effective_price) }} <span class="small fw-normal text-muted" style="font-size: 0.8rem;">تومان</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="cc-plan-price" style="font-size: 1.35rem;">
+                        {{ "{:,}".format(plan.price_toman) }} <span class="small fw-normal text-muted">تومان</span>
+                    </div>
+                    {% endif %}
                 {% endif %}
+
                 <ul class="cc-spec-list mb-0">
                     <li><span class="text-muted">CPU</span><strong class="font-mono">{{ plan.cpus }} Core</strong></li>
                     <li><span class="text-muted">RAM</span><strong class="font-mono">{{ plan.ram_gb }} GB</strong></li>
@@ -85,7 +82,24 @@ document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
         {% endfor %}
     </div>
 
-    <!-- Server Config & Payment Receipt Section -->
+    {% if store_mode != 'hourly' %}
+    <!-- Dedicated Base-Spec 1-Hour Test Server Card inside Monthly Store -->
+    <div class="card p-3 mb-4 anim-fade-up" style="border: 1px solid rgba(245, 158, 11, 0.5); background: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(139, 92, 246, 0.08));">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <div class="fw-bold text-warning"><i class="fas fa-hourglass-half me-1"></i> سرور تست ۱ ساعته (فقط با امکانات پایه) — ۱۵۰,۰۰۰ تومان</div>
+                <div class="small text-muted mt-1">
+                    مشخصات ثابت سرور تست: <strong class="font-mono">1 Core CPU / 2 GB RAM / 20 GB SSD / 50 GiB</strong> • مدت زمان: <strong>دقیقاً ۱ ساعت</strong> از زمان تحویل (پس از ۱ ساعت خودکار خاموش و حذف می‌شود).
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="selectTest1hMode()">
+                <i class="fas fa-bolt"></i> انتخاب سرور تست ۱ ساعته
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Server Config & Payment Section -->
     <div class="row g-4 anim-fade-up delay-2">
         <div class="col-12 col-xl-6">
             <div class="card p-4 h-100">
@@ -107,41 +121,46 @@ document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
                             {% endfor %}
                         </select>
                     </div>
+
+                    {% if store_mode == 'hourly' %}
+                    <input type="hidden" name="billing_type" value="hourly">
+                    <input type="hidden" name="pay_method" value="wallet">
+                    <div class="alert alert-warning mb-0 small">
+                        <div class="mb-2">
+                            <i class="fas fa-triangle-exclamation me-1"></i>
+                            <strong>شرایط و پیش‌پرداخت سرور ساعتی:</strong>
+                            به محض ساخت و تحویل سرور ساعتی، مبلغ <strong>۱۲ ساعت استفاده پایه + ۱۰ گیگابایت ترافیک</strong> (<span id="hourlyUpfrontPreview" class="font-mono fw-bold text-gold"></span> تومان) از کیف پول شما کسر می‌شود و تا <strong>۱۲ ساعت</strong> امکان حذف سرور وجود نخواهد داشت.
+                        </div>
+                        <label class="d-flex align-items-start gap-2 fw-bold" style="cursor: pointer;">
+                            <input type="checkbox" name="hourly_confirm" id="hourlyConfirmChk" value="1" required style="accent-color: #8B5CF6; margin-top: 3px;">
+                            <span>تایید می‌کنم مبلغ ۱۲ ساعت + ۱۰ گیگابایت ترافیک از کیف پول کسر شود و تا ۱۲ ساعت امکان حذف سرور وجود ندارد.</span>
+                        </label>
+                    </div>
+                    {% else %}
                     <div>
-                        <label class="form-label"><i class="fas fa-clock text-info me-1"></i> نوع دوره و صورت‌حساب</label>
-                        <select name="billing_type" id="billingTypeSelect" class="form-select" onchange="toggleBillingMode(this.value)">
-                            <option value="monthly" selected>ماهانه (۳۰ روزه — تعرفه استاندارد)</option>
-                            <option value="hourly">ساعتی (کسر ساعتی هزینه سرور + ترافیک با +۲۰٪ از کیف پول)</option>
-                            <option value="test_1h">سرور تست ۱ ساعته — ۱۵۰,۰۰۰ تومان (حذف خودکار پس از ۱ ساعت)</option>
+                        <label class="form-label"><i class="fas fa-clock text-info me-1"></i> نوع سرویس در بخش ماهانه</label>
+                        <select name="billing_type" id="billingTypeSelect" class="form-select" onchange="toggleMonthlyOrTest(this.value)">
+                            <option value="monthly" selected>سرور ماهانه (۳۰ روزه — طبق پلن انتخابی)</option>
+                            <option value="test_1h">سرور تست ۱ ساعته — ۱۵۰,۰۰۰ تومان (امکانات پایه: 1C / 2G / 20G SSD)</option>
                         </select>
                         <div id="test1hNotice" class="alert alert-info mt-2 mb-0 small" style="display: none;">
                             <i class="fas fa-hourglass-half me-1"></i>
-                            <strong>توضیحات سرور تست:</strong> این سرور یک‌ساعته است و هزینه آن <strong>۱۵۰,۰۰۰ تومان</strong> می‌باشد. از لحظه تحویل، پس از گذشت ۱ ساعت سرور به صورت خودکار خاموش و حذف شده و آی‌پی آن آزاد می‌شود.
-                        </div>
-                        <div id="hourlyNotice" class="alert alert-warning mt-2 mb-0 small" style="display: none;">
-                            <div class="mb-2">
-                                <i class="fas fa-triangle-exclamation me-1"></i>
-                                <strong>شرایط و پیش‌پرداخت سرور ساعتی:</strong>
-                                به محض ساخت و تحویل سرور ساعتی، مبلغ <strong>۱۲ ساعت استفاده پایه + ۱۰ گیگابایت ترافیک</strong> (<span id="hourlyUpfrontPreview" class="font-mono fw-bold text-gold"></span> تومان) از کیف پول شما کسر می‌شود و تا <strong>۱۲ ساعت</strong> امکان حذف سرور وجود نخواهد داشت. پس از ۱۲ ساعت، هزینه هر ساعت جدید + ترافیک مازاد از کیف پول کسر می‌گردد.
-                            </div>
-                            <label class="d-flex align-items-start gap-2 fw-bold" style="cursor: pointer;">
-                                <input type="checkbox" name="hourly_confirm" id="hourlyConfirmChk" value="1" style="accent-color: #8B5CF6; margin-top: 3px;">
-                                <span>تایید می‌کنم مبلغ ۱۲ ساعت + ۱۰ گیگابایت ترافیک از کیف پول کسر شود و تا ۱۲ ساعت امکان حذف سرور وجود ندارد.</span>
-                            </label>
+                            <strong>توضیحات سرور تست ۱ ساعته:</strong> این سرور فقط با <strong>امکانات پایه (1 Core / 2GB RAM / 20GB SSD)</strong> و هزینه <strong>۱۵۰,۰۰۰ تومان</strong> به مدت ۱ ساعت ارائه می‌شود و پس از اتمام ۱ ساعت خودکار خاموش و حذف می‌گردد.
                         </div>
                     </div>
-                    <div id="payMethodWrap">
+                    <div>
                         <label class="form-label">روش پرداخت</label>
                         <select name="pay_method" class="form-select" onchange="document.getElementById('vpsReceiptBox').style.display = (this.value === 'receipt' ? 'block' : 'none');">
                             <option value="receipt" selected>واریز کارت به کارت و بارگذاری فیش (تایید ادمین)</option>
                             <option value="wallet">کسر از موجودی تاییدشده کیف پول ({{ "{:,}".format(user_wallet|default(0)) }} تومان)</option>
                         </select>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
-        <div class="col-12 col-xl-6" id="vpsReceiptBox">
+        <div class="col-12 col-xl-6" id="vpsReceiptBox" {% if store_mode == 'hourly' %}style="display: none;"{% endif %}>
             <div class="card p-4 h-100">
                 <div class="cc-bank-card mb-3">
                     <div class="d-flex justify-content-between small mb-1">
@@ -170,4 +189,39 @@ document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
         </button>
     </div>
 </form>
+
+<script>
+const PLAN_HOURLY_MAP = {
+    {% for plan in plans %}"{{ plan.id }}": {{ plan.hourly_price }},{% endfor %}
+};
+const GIB_10_COST = {{ ((addon_tariffs.tb_eff / 1000.0) * 1.20 * 10)|round|int if addon_tariffs else 9000 }};
+
+function updateHourlyUpfrontPreview() {
+    const checkedPlan = document.querySelector("input[name='plan_id']:checked");
+    const pid = checkedPlan ? checkedPlan.value : "";
+    const hrRate = PLAN_HOURLY_MAP[pid] || 1983;
+    const totalUpfront = (12 * hrRate) + GIB_10_COST;
+    const prevEl = document.getElementById("hourlyUpfrontPreview");
+    if (prevEl) prevEl.innerText = totalUpfront.toLocaleString("en-US");
+}
+
+function toggleMonthlyOrTest(val) {
+    const notice = document.getElementById("test1hNotice");
+    if (notice) notice.style.display = (val === "test_1h") ? "block" : "none";
+}
+
+function selectTest1hMode() {
+    const sel = document.getElementById("billingTypeSelect");
+    if (sel) {
+        sel.value = "test_1h";
+        toggleMonthlyOrTest("test_1h");
+        sel.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+}
+
+document.querySelectorAll("input[name='plan_id']").forEach(el => {
+    el.addEventListener("change", updateHourlyUpfrontPreview);
+});
+document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
+</script>
 {% endblock %}
