@@ -143,7 +143,7 @@
                 <div class="col-12 col-xl-7 anim-fade-up">
                     <div class="cc-10g-pill mb-3">
                         <span class="pulse-dot"></span>
-                        <span>پورت اختصاصی ۱۰ گیگابیت (10 Gbps) • تحویل آنی و خودکار</span>
+                        <span>پورت ۱۰ گیگابیت • آپلینک بالانس‌شده آسیاتک + رسپینا</span>
                     </div>
                     <h1 class="cc-hero-title">
                         قدرت واقعی سرور ابری با <span>سرعت ۱۰ گیگابیت</span> و کنترل یک‌کلیکی
@@ -162,7 +162,7 @@
                         </a>
                     </div>
                     <div class="d-flex flex-wrap gap-4 small text-muted">
-                        <span><i class="fas fa-check-circle text-success me-1"></i> پورت ۱۰ گیگابیت واقعی</span>
+                        <span><i class="fas fa-check-circle text-success me-1"></i> آپلینک دوگانه آسیاتک و رسپینا</span>
                         <span><i class="fas fa-check-circle text-success me-1"></i> آپتایم ۹۹.۹۸٪ تضمینی</span>
                         <span><i class="fas fa-check-circle text-success me-1"></i> ضمانت ۴۸ ساعته بازگشت وجه</span>
                     </div>
@@ -176,7 +176,7 @@
                                 <span class="pulse-dot"></span>
                                 <span class="fw-bold small">پیش‌نمایش زنده سرور ابری</span>
                             </div>
-                            <span class="badge bg-info-subtle font-mono" id="liveSpeedBadge">10 Gbps Uplink • 12ms</span>
+                            <span class="badge bg-info-subtle font-mono" id="liveSpeedBadge">Asiatech + Respina • 10 Gbps</span>
                         </div>
 
                         <!-- Interactive OS Picker Demo -->
@@ -293,6 +293,37 @@
                     </article>
                 </div>
                 {% endfor %}
+            </div>
+
+            
+            <!-- Dual-Uplink & 1-Hour Test Server Highlight -->
+            <div class="row g-3 mt-3">
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 h-100" style="border: 1px solid rgba(56, 189, 248, 0.45); background: linear-gradient(135deg, rgba(56, 189, 248, 0.10), rgba(139, 92, 246, 0.10));">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="stat-icon bg-info-subtle"><i class="fas fa-route"></i></span>
+                            <div>
+                                <div class="fw-bold">آپلینک دوگانه بالانس‌شده: <span class="text-info">آسیاتک (Asiatech)</span> و <span class="text-primary">رسپینا (Respina)</span></div>
+                                <div class="small text-muted">توزیع هوشمند بار شبکه روی دو مسیر پرظرفیت آسیاتک و رسپینا برای کمترین پینگ و پایداری ۹۹.۹۸٪</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 h-100 d-flex flex-row justify-content-between align-items-center" style="border: 1px solid rgba(245, 158, 11, 0.45); background: linear-gradient(135deg, rgba(245, 158, 11, 0.10), rgba(139, 92, 246, 0.08));">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="stat-icon bg-warning-subtle"><i class="fas fa-hourglass-half"></i></span>
+                            <div>
+                                <div class="fw-bold">سرور تست ۱ ساعته (تحویل آنی)</div>
+                                <div class="small text-muted">فعال به مدت ۱ ساعت از زمان تحویل؛ پس از ۱ ساعت خودکار خاموش و حذف می‌شود</div>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-extrabold text-gold font-mono" style="font-size: 1.1rem;">۱۵۰,۰۰۰ تومان</div>
+                            <a href="{{ url_for('order_vps_page') if logged_in else url_for('register') }}" class="btn btn-sm btn-outline-warning rounded-pill mt-1">سفارش تست</a>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Add-On Quick Strip -->

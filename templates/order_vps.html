@@ -1,5 +1,40 @@
 {% extends "base.html" %}
-{% block title %}سفارش سرور مجازی | آیرون کور کلود{% endblock %}
+{% block title %}سفارش سرور مجازی | آیرون کور کلود
+<script>
+const PLAN_HOURLY_MAP = {
+    {% for plan in plans %}"{{ plan.id }}": {{ plan.hourly_price }},{% endfor %}
+};
+const GIB_10_COST = {{ ((addon_tariffs.tb_eff / 1000.0) * 1.20 * 10)|round|int if addon_tariffs else 9000 }};
+
+function updateHourlyUpfrontPreview() {
+    const checkedPlan = document.querySelector("input[name='plan_id']:checked");
+    const pid = checkedPlan ? checkedPlan.value : "";
+    const hrRate = PLAN_HOURLY_MAP[pid] || 1983;
+    const totalUpfront = (12 * hrRate) + GIB_10_COST;
+    const prevEl = document.getElementById("hourlyUpfrontPreview");
+    if (prevEl) prevEl.innerText = totalUpfront.toLocaleString("en-US");
+}
+
+function toggleBillingMode(val) {
+    document.getElementById("test1hNotice").style.display = (val === "test_1h") ? "block" : "none";
+    document.getElementById("hourlyNotice").style.display = (val === "hourly") ? "block" : "none";
+    const chk = document.getElementById("hourlyConfirmChk");
+    if (chk) chk.required = (val === "hourly");
+    const pmSel = document.querySelector("select[name='pay_method']");
+    const recBox = document.getElementById("vpsReceiptBox");
+    if (val === "hourly" && pmSel) {
+        pmSel.value = "wallet";
+        if (recBox) recBox.style.display = "none";
+    }
+    updateHourlyUpfrontPreview();
+}
+
+document.querySelectorAll("input[name='plan_id']").forEach(el => {
+    el.addEventListener("change", updateHourlyUpfrontPreview);
+});
+document.addEventListener("DOMContentLoaded", updateHourlyUpfrontPreview);
+</script>
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 anim-fade-up">
     <h1 class="fw-extrabold m-0" style="font-size: 1.35rem;">
@@ -73,6 +108,29 @@
                         </select>
                     </div>
                     <div>
+                        <label class="form-label"><i class="fas fa-clock text-info me-1"></i> نوع دوره و صورت‌حساب</label>
+                        <select name="billing_type" id="billingTypeSelect" class="form-select" onchange="toggleBillingMode(this.value)">
+                            <option value="monthly" selected>ماهانه (۳۰ روزه — تعرفه استاندارد)</option>
+                            <option value="hourly">ساعتی (کسر ساعتی هزینه سرور + ترافیک با +۲۰٪ از کیف پول)</option>
+                            <option value="test_1h">سرور تست ۱ ساعته — ۱۵۰,۰۰۰ تومان (حذف خودکار پس از ۱ ساعت)</option>
+                        </select>
+                        <div id="test1hNotice" class="alert alert-info mt-2 mb-0 small" style="display: none;">
+                            <i class="fas fa-hourglass-half me-1"></i>
+                            <strong>توضیحات سرور تست:</strong> این سرور یک‌ساعته است و هزینه آن <strong>۱۵۰,۰۰۰ تومان</strong> می‌باشد. از لحظه تحویل، پس از گذشت ۱ ساعت سرور به صورت خودکار خاموش و حذف شده و آی‌پی آن آزاد می‌شود.
+                        </div>
+                        <div id="hourlyNotice" class="alert alert-warning mt-2 mb-0 small" style="display: none;">
+                            <div class="mb-2">
+                                <i class="fas fa-triangle-exclamation me-1"></i>
+                                <strong>شرایط و پیش‌پرداخت سرور ساعتی:</strong>
+                                به محض ساخت و تحویل سرور ساعتی، مبلغ <strong>۱۲ ساعت استفاده پایه + ۱۰ گیگابایت ترافیک</strong> (<span id="hourlyUpfrontPreview" class="font-mono fw-bold text-gold"></span> تومان) از کیف پول شما کسر می‌شود و تا <strong>۱۲ ساعت</strong> امکان حذف سرور وجود نخواهد داشت. پس از ۱۲ ساعت، هزینه هر ساعت جدید + ترافیک مازاد از کیف پول کسر می‌گردد.
+                            </div>
+                            <label class="d-flex align-items-start gap-2 fw-bold" style="cursor: pointer;">
+                                <input type="checkbox" name="hourly_confirm" id="hourlyConfirmChk" value="1" style="accent-color: #8B5CF6; margin-top: 3px;">
+                                <span>تایید می‌کنم مبلغ ۱۲ ساعت + ۱۰ گیگابایت ترافیک از کیف پول کسر شود و تا ۱۲ ساعت امکان حذف سرور وجود ندارد.</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="payMethodWrap">
                         <label class="form-label">روش پرداخت</label>
                         <select name="pay_method" class="form-select" onchange="document.getElementById('vpsReceiptBox').style.display = (this.value === 'receipt' ? 'block' : 'none');">
                             <option value="receipt" selected>واریز کارت به کارت و بارگذاری فیش (تایید ادمین)</option>

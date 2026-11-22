@@ -154,6 +154,9 @@
               <td>
                 {% if ip.is_allocated %}
                   <span class="badge bg-warning-subtle text-warning">تخصیص‌یافته</span>
+                {% elif ip.ip_status == 'quarantined' %}
+                  <span class="badge bg-danger-subtle text-danger"><i class="fas fa-shield-virus me-1"></i>قرنطینه (اکسسی)</span>
+                  {% if ip.quarantine_reason %}<div class="small text-muted mt-1">{{ ip.quarantine_reason }}</div>{% endif %}
                 {% else %}
                   <span class="badge bg-success-subtle text-success">آزاد</span>
                 {% endif %}
@@ -162,6 +165,13 @@
               <td class="small text-muted">{{ ip.notes or "-" }}</td>
               <td class="text-end">
                 <div class="d-flex gap-2 justify-content-end">
+                  {% if ip.ip_status == 'quarantined' %}
+                  <form method="POST" action="{{ url_for('verify_ip_pool', ip_id=ip.id) }}" class="m-0">
+                    <button type="submit" class="btn btn-sm btn-success rounded-pill">
+                      <i class="fas fa-check-double me-1"></i>تایید سلامت و آزادسازی
+                    </button>
+                  </form>
+                  {% endif %}
                   {% if ip.is_allocated %}
                   <a href="{{ url_for('release_ip_pool', ip_id=ip.id) }}" class="btn btn-sm btn-outline-warning rounded-pill">
                     <i class="fas fa-unlink me-1"></i>آزادسازی

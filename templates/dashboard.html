@@ -8,6 +8,47 @@
     }
 })();
 </script>
+
+<!-- User Delete Server Reason Modal -->
+<div class="modal fade" id="userDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background: var(--bg-card-solid); border: 1px solid rgba(244, 63, 94, 0.45); color: var(--text-main);">
+            <div class="modal-header border-bottom" style="border-color: var(--border-subtle) !important;">
+                <h5 class="modal-title fw-bold text-danger"><i class="fas fa-trash-can me-1"></i> حذف سرور <span id="delSrvLabel" class="font-mono"></span></h5>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">✕</button>
+            </div>
+            <form id="userDeleteForm" method="POST" action="">
+                <div class="modal-body d-flex flex-column gap-3">
+                    <p class="small text-muted mb-1">با حذف سرور، کسر هزینه ساعتی بلافاصله متوقف شده و سرور به صورت کامل پاک می‌شود. لطفاً علت حذف را انتخاب کنید:</p>
+                    <label class="cc-perm-item">
+                        <input type="radio" name="delete_reason" value="not_needed" checked required>
+                        <span>دیگر به کارم نمی‌آید</span>
+                    </label>
+                    <label class="cc-perm-item">
+                        <input type="radio" name="delete_reason" value="ip_access" required>
+                        <span>اکسسی آی‌پی (اختلال یا فیلترینگ آی‌پی)</span>
+                    </label>
+                    <label class="cc-perm-item">
+                        <input type="radio" name="delete_reason" value="other" required>
+                        <span>سایر</span>
+                    </label>
+                </div>
+                <div class="modal-footer border-top" style="border-color: var(--border-subtle) !important;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-bs-dismiss="modal">انصراف</button>
+                    <button type="submit" class="btn btn-sm btn-danger rounded-pill px-4">تایید و حذف کامل سرور</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+function openUserDeleteModal(srvId, srvName, srvIp) {
+    document.getElementById("delSrvLabel").innerText = srvName + " (" + srvIp + ")";
+    document.getElementById("userDeleteForm").action = "/server/" + srvId + "/user_delete";
+    new bootstrap.Modal(document.getElementById("userDeleteModal")).show();
+}
+</script>
+
 {% endblock %}
 {% block content %}
 
@@ -134,6 +175,11 @@
     {% set os_title = s[15] or 'Ubuntu 22.04 LTS' %}
     {% set prov_status = s[16] or 'ready' %}
     {% set pwr_state = s[17] or 'on' %}
+    {% set b_type = s[18] or 'monthly' %}
+    {% set hr_rate = s[19] or 0 %}
+    {% set test_exp = s[20] or '' %}
+    {% set min_del = s[21] or '' %}
+    {% set del_locked = (b_type == 'hourly' and min_del and now_utc_iso and now_utc_iso < min_del) %}
     {% set pct = ((usage_gib / limit_gib) * 100)|round(1) if limit_gib > 0 else 0 %}
     {% set ring_off = (176 - (176 * ([pct, 100]|min) / 100))|round(1) %}
 
@@ -175,7 +221,13 @@
                     {% endif %}
                     <div class="small font-mono text-gold mt-1">مصرف دانلود: {{ "%.2f"|format(usage_gib) }} / {{ "%.0f"|format(limit_gib) }} GiB</div>
                     <div class="small font-mono text-success mt-1">حجم باقی‌مانده: {{ "%.2f"|format([0, limit_gib - usage_gib]|max) }} GiB</div>
+                    {% if b_type == 'test_1h' %}
+                    <div class="small font-mono text-warning mt-1"><i class="fas fa-hourglass-half me-1"></i>سرور تست ۱ ساعته (حذف خودکار پس از ۱ ساعت)</div>
+                    {% elif b_type == 'hourly' %}
+                    <div class="small font-mono text-info mt-1"><i class="fas fa-clock me-1"></i>ساعتی ({{ "{:,}".format(hr_rate) }} ت/ساعت + ترافیک)</div>
+                    {% else %}
                     <div class="small font-mono text-info mt-1"><i class="fas fa-calendar-day me-1"></i>تاریخ تمدید: {{ exp_at | jalali }}</div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -213,6 +265,16 @@
                 <a href="{{ url_for('snapshots_page', server_id=srv_id) }}" class="btn btn-sm btn-outline-secondary">
                     <i class="fas fa-camera"></i> اسنپ‌شات
                 </a>
+                {% endif %}
+
+                {% if del_locked %}
+                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="امکان حذف سرور ساعتی تا ۱۲ ساعت اول پس از تحویل وجود ندارد">
+                    <i class="fas fa-lock"></i> قفل حذف (۱۲ ساعت اول)
+                </button>
+                {% else %}
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="openUserDeleteModal({{ srv_id }}, '{{ srv_name|e }}', '{{ srv_ip|e }}')">
+                    <i class="fas fa-trash-can"></i> حذف سرور
+                </button>
                 {% endif %}
             </div>
 

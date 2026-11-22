@@ -525,6 +525,17 @@ def init_db():
     for sk, sv, st in default_settings:
         c.execute("INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (sk, sv, st))
 
+    c.execute("PRAGMA table_info(ip_pool)")
+    ipp_cols = [info[1] for info in c.fetchall()]
+    for col_n, col_t in [
+        ("ip_status", "TEXT DEFAULT 'free'"),
+        ("quarantine_reason", "TEXT DEFAULT NULL"),
+    ]:
+        if col_n not in ipp_cols:
+            try:
+                c.execute(f"ALTER TABLE ip_pool ADD COLUMN {col_n} {col_t}")
+            except Exception:
+                pass
     c.execute("PRAGMA table_info(servers)")
     cols = [info[1] for info in c.fetchall()]
     needed_cols = [
@@ -542,6 +553,12 @@ def init_db():
         ("provisioning_status", "TEXT DEFAULT 'ready'"),
         ("power_state", "TEXT DEFAULT 'on'"),
         ("post_expiry_notified", "INTEGER DEFAULT 0"),
+        ("billing_type", "TEXT DEFAULT 'monthly'"),
+        ("hourly_rate_toman", "INTEGER DEFAULT 0"),
+        ("last_billed_at", "TEXT DEFAULT NULL"),
+        ("last_billed_traffic_gib", "REAL DEFAULT 0"),
+        ("test_expires_at", "TEXT DEFAULT NULL"),
+        ("min_delete_until", "TEXT DEFAULT NULL"),
         ("mac_address", "TEXT DEFAULT NULL"),
         ("plan_name", "TEXT DEFAULT NULL"),
         ("cpus", "INTEGER DEFAULT 2"),
@@ -1195,7 +1212,7 @@ def _update_admin_telegram_receipt_status(req_row: dict, final_status_line: str)
         )
 
 
-def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str, os_template_id: int | None = None) -> str:
+def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_label: str, root_password: str, os_template_id: int | None = None, billing_type: str = 'monthly') -> str:
     c.execute(
         "SELECT id, code, name_fa, cpus, ram_gb, disk_gb, traffic_gib, "
         "CASE WHEN COALESCE(promo_active, 0)=1 AND promo_price_toman IS NOT NULL AND promo_price_toman > 0 AND promo_price_toman < price_toman "
@@ -1218,7 +1235,7 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
     clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label or "") or f"cc-{p_code}-{int(time.time()) % 10000}"
 
     c.execute(
-        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 AND COALESCE(ip_status, 'free')='free' ORDER BY id ASC LIMIT 1"
     )
     pool_row = c.fetchone()
     if pool_row:
@@ -1244,20 +1261,49 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
     init_prov_status = "provisioning" if (esxi_row and pool_row) else "ready"
     init_power_state = "off" if (esxi_row and pool_row) else "on"
 
-    now_iso = datetime.datetime.utcnow().isoformat()
-    expires_at_str = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+    now_dt = datetime.datetime.utcnow()
+    now_iso = now_dt.isoformat()
+    init_min_del = None
+    init_last_billed = None
+    init_billed_gib = 0.0
+    if billing_type == "test_1h":
+        expires_at_str = now_dt.strftime("%Y-%m-%d")
+        eff_traffic_limit = 50.0
+        eff_hourly_rate = 0
+        eff_monthly_price = 150000
+        eff_plan_label = "سرور تست ۱ ساعته"
+        init_test_exp = (now_dt + datetime.timedelta(hours=1)).isoformat()
+    elif billing_type == "hourly":
+        expires_at_str = "ساعتی (پیش‌پرداخت ۱۲ساعت + ۱۰G)"
+        eff_traffic_limit = traffic_gib
+        eff_hourly_rate = int(round((plan_price / 720.0) * 1.20))
+        eff_monthly_price = plan_price
+        eff_plan_label = f"{p_name_fa} (ساعتی)"
+        init_test_exp = None
+        init_min_del = (now_dt + datetime.timedelta(hours=12)).isoformat()
+        init_last_billed = (now_dt + datetime.timedelta(hours=12)).isoformat()
+        init_billed_gib = 10.0
+    else:
+        expires_at_str = (now_dt + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+        eff_traffic_limit = traffic_gib
+        eff_hourly_rate = 0
+        eff_monthly_price = plan_price
+        eff_plan_label = p_name_fa
+        init_test_exp = None
+
     c.execute(
         """INSERT INTO servers (
             name, ip, username, password, traffic_limit, active, traffic_usage,
             updated_at, esxi_host_id, vmid, vm_name, is_suspended,
             netmask, gateway, ipv6, ipv6_gateway, mac_address, plan_name, cpus, ram_mb, disk_gb,
-            expires_at, monthly_price, os_name, template_vmdk, provisioning_status, power_state
-        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            expires_at, monthly_price, os_name, template_vmdk, provisioning_status, power_state,
+            billing_type, hourly_rate_toman, last_billed_at, last_billed_traffic_gib, test_expires_at, min_delete_until
+        ) VALUES (?, ?, 'root', ?, ?, 1, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             clean_name,
             primary_ip,
             root_password,
-            traffic_gib,
+            eff_traffic_limit,
             now_iso,
             esxi_host_id,
             vmid,
@@ -1267,16 +1313,22 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
             ipv6,
             ipv6_gw,
             mac_addr,
-            p_name_fa,
+            eff_plan_label,
             cpus,
             ram_mb,
             disk_gb,
             expires_at_str,
-            plan_price,
+            eff_monthly_price,
             chosen_os_name,
             chosen_vmdk,
             init_prov_status,
             init_power_state,
+            billing_type,
+            eff_hourly_rate,
+            init_last_billed,
+            init_billed_gib,
+            init_test_exp,
+            init_min_del,
         ),
     )
     srv_id = c.lastrowid
@@ -1317,9 +1369,15 @@ def _execute_vps_provisioning(c, user_id: int, username: str, plan_id: int, vm_l
                 bg_c = bg_conn.cursor()
                 bg_now = datetime.datetime.utcnow().isoformat()
                 if ok and created_vmid:
+                    now_r_dt = datetime.datetime.utcnow()
+                    test_exp_ready = (now_r_dt + datetime.timedelta(hours=1)).isoformat() if billing_type == "test_1h" else None
+                    hr_12_ready = (now_r_dt + datetime.timedelta(hours=12)).isoformat() if billing_type == "hourly" else None
                     bg_c.execute(
-                        "UPDATE servers SET vmid=?, provisioning_status='ready', power_state='on', updated_at=? WHERE id=?",
-                        (created_vmid, bg_now, target_srv_id),
+                        "UPDATE servers SET vmid=?, provisioning_status='ready', power_state='on', updated_at=?, "
+                        "test_expires_at=COALESCE(?, test_expires_at), "
+                        "min_delete_until=COALESCE(?, min_delete_until), "
+                        "last_billed_at=COALESCE(?, last_billed_at) WHERE id=?",
+                        (created_vmid, bg_now, test_exp_ready, hr_12_ready, hr_12_ready, target_srv_id),
                     )
                     bg_c.execute(
                         "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
@@ -1519,7 +1577,7 @@ def _execute_ip_service(c, server_id: int, op_type: str) -> str:
         return "سرور مورد نظر یافت نشد."
     srv_id, srv_name, old_ip, old_mask, old_gw, old_v6, old_v6gw, old_extras, ssh_u, ssh_p = s_row
     c.execute(
-        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+        "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway FROM ip_pool WHERE is_allocated=0 AND COALESCE(ip_status, 'free')='free' ORDER BY id ASC LIMIT 1"
     )
     free_ip = c.fetchone()
     if not free_ip:
@@ -1644,7 +1702,7 @@ def decide_payment_request(req_id: int, action: str, actor_label: str, reject_re
                 int(payload.get("plan_id", 1)),
                 payload.get("vm_name", ""),
                 payload.get("root_password", "Ubuntu@12345"),
-                os_template_id=payload.get("os_template_id"),
+                os_template_id=payload.get("os_template_id"), billing_type=payload.get("billing_type", "monthly"),
             )
         elif rtype == "renew_vps":
             fulfillment_note = _execute_vps_renewal(
@@ -1924,6 +1982,7 @@ def get_active_plans():
             "promo_active": p_active,
             "effective_price": eff_p,
             "discount_pct": disc_pct,
+            "hourly_price": int(round((eff_p / 720.0) * 1.20)),
         })
     conn.close()
     return plans
@@ -2139,6 +2198,7 @@ def dashboard():
         plans=plans,
         os_templates=os_templates,
         today_str=today_str,
+        now_utc_iso=datetime.datetime.utcnow().isoformat(),
         addon_tariffs=get_effective_addon_tariffs(),
         my_requests=my_requests,
         role=session["role"],
@@ -2232,7 +2292,12 @@ def order_vps_page():
         root_password = request.form.get("root_password", "").strip()
         os_tpl_raw = request.form.get("os_template_id", "").strip()
         os_template_id = int(os_tpl_raw) if os_tpl_raw.isdigit() else None
+        billing_type = request.form.get("billing_type", "monthly").strip()
+        if billing_type not in ("monthly", "hourly", "test_1h"):
+            billing_type = "monthly"
         pay_method = request.form.get("pay_method", "receipt").strip()
+        if billing_type == "hourly":
+            pay_method = "wallet"
         tracking_note = request.form.get("tracking_note", "").strip()
 
         conn = get_db_connection()
@@ -2257,19 +2322,35 @@ def order_vps_page():
             error_msg = "رمز عبور سرور باید حداقل ۶ کاراکتر باشد."
         else:
             _, p_code, p_name_fa, cpus, ram_gb, disk_gb, traffic_gib, price_toman = plan_row
+            if billing_type == "test_1h":
+                charge_now = 150000
+                order_label = f"سرور تست ۱ ساعته ({p_name_fa})"
+            elif billing_type == "hourly":
+                if request.form.get("hourly_confirm") != "1":
+                    conn.close()
+                    error_msg = "برای خرید سرور ساعتی، باید تاییدیه کسر پیش‌پرداخت ۱۲ ساعت + ۱۰ گیگابایت ترافیک و محدودیت حذف ۱۲ ساعته را تیک بزنید."
+                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg)
+                _ad_ord = get_effective_addon_tariffs()
+                hr_base = int(round((price_toman / 720.0) * 1.20))
+                gib_10_cost = int(round(10.0 * ((_ad_ord["tb_eff"] / 1000.0) * 1.20)))
+                charge_now = (12 * hr_base) + gib_10_cost
+                order_label = f"{p_name_fa} (ساعتی — پیش‌پرداخت ۱۲ساعت + ۱۰G)"
+            else:
+                charge_now = price_toman
+                order_label = p_name_fa
             clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", vm_label) or f"cc-{p_code}-{int(time.time()) % 10000}"
 
             if pay_method == "wallet":
                 c.execute(
                     "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
-                    (price_toman, session["user_id"], price_toman),
+                    (charge_now, session["user_id"], charge_now),
                 )
                 if c.rowcount == 0:
                     conn.close()
-                    error_msg = f"موجودی کیف پول شما کافی نیست ({price_toman:,} تومان). لطفاً روش «کارت به کارت و آپلود فیش» را انتخاب کنید."
-                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, selected_code=selected_code, error_msg=error_msg)
+                    error_msg = f"موجودی کیف پول شما برای شروع ({charge_now:,} تومان) کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید یا روش کارت به کارت را انتخاب نمایید."
+                    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg)
 
-                _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password, os_template_id=os_template_id)
+                _execute_vps_provisioning(c, session["user_id"], session.get("username", "user"), plan_id, clean_name, root_password, os_template_id=os_template_id, billing_type=billing_type)
                 conn.commit()
                 conn.close()
                 return redirect(url_for("dashboard"))
@@ -2281,22 +2362,22 @@ def order_vps_page():
                     error_msg = file_or_err
                 else:
                     now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-                    title = f"خرید {p_name_fa} ({clean_name})"
-                    payload = json.dumps({"plan_id": plan_id, "vm_name": clean_name, "root_password": root_password, "os_template_id": os_template_id})
+                    title = f"خرید {order_label} ({clean_name})"
+                    payload = json.dumps({"plan_id": plan_id, "vm_name": clean_name, "root_password": root_password, "os_template_id": os_template_id, "billing_type": billing_type})
                     c.execute(
                         """INSERT INTO payment_requests (
                             user_id, username, request_type, title, amount_toman, receipt_filename,
                             tracking_note, payload_json, status, created_at
                         ) VALUES (?, ?, 'buy_vps', ?, ?, ?, ?, ?, 'pending', ?)""",
-                        (session["user_id"], session.get("username", "user"), title, price_toman, file_or_err, tracking_note, payload, now_str),
+                        (session["user_id"], session.get("username", "user"), title, charge_now, file_or_err, tracking_note, payload, now_str),
                     )
                     req_id = c.lastrowid
                     conn.commit()
                     conn.close()
-                    notify_admin_new_receipt(req_id, session.get("username", "user"), title, price_toman, tracking_note, file_or_err)
+                    notify_admin_new_receipt(req_id, session.get("username", "user"), title, charge_now, tracking_note, file_or_err)
                     success_msg = f"سفارش {p_name_fa} و فیش واریزی شما (#{req_id}) ثبت شد. به محض تایید ادمین، سرور به صورت خودکار ساخته و در پنل شما فعال می‌شود."
 
-    return render_template("order_vps.html", plans=plans, os_templates=os_templates, selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
+    return render_template("order_vps.html", plans=plans, os_templates=os_templates, addon_tariffs=get_effective_addon_tariffs(), selected_code=selected_code, error_msg=error_msg, success_msg=success_msg)
 
 
 @app.route("/server/<int:server_id>/power/<action>", methods=["POST"])
@@ -4221,6 +4302,203 @@ def admin_terminate_server(server_id):
     invalidate_servers_cache()
     return redirect(url_for("manage_servers"))
 
+
+
+@app.route("/ip_pool/verify/<int:ip_id>", methods=["POST"])
+@perm_required("ip_pool")
+def verify_ip_pool(ip_id):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE ip_pool SET is_allocated=0, server_id=NULL, ip_status='free', quarantine_reason=NULL WHERE id=?",
+        (ip_id,),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("ip_pool_page"))
+
+
+@app.route("/server/<int:server_id>/user_delete", methods=["POST"])
+@login_required
+def user_delete_server(server_id):
+    if not user_can_access_server(session["user_id"], session.get("role", "user"), server_id):
+        return "Forbidden", 403
+    reason_code = request.form.get("delete_reason", "not_needed").strip()
+    reason_labels = {
+        "not_needed": "دیگر به کارم نمی‌آید",
+        "ip_access": "اکسسی آی‌پی (فیلترینگ / اختلال دسترسی)",
+        "other": "سایر موارد",
+    }
+    reason_fa = reason_labels.get(reason_code, "دیگر به کارم نمی‌آید")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT COALESCE(billing_type, 'monthly'), min_delete_until FROM servers WHERE id=?", (server_id,))
+    lock_row = c.fetchone()
+    if lock_row and lock_row[0] == "hourly" and lock_row[1]:
+        try:
+            lock_dt = datetime.datetime.fromisoformat(lock_row[1])
+            if datetime.datetime.utcnow() < lock_dt:
+                conn.close()
+                return redirect(url_for("dashboard"))
+        except Exception:
+            pass
+    c.execute(
+        """SELECT s.name, s.ip, s.vm_name, s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password, h.default_datastore
+           FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id WHERE s.id=?""",
+        (server_id,),
+    )
+    row = c.fetchone()
+    if row:
+        sname, sip, vm_name, vmid, host_id, esxi_ip, esxi_port, esxi_u, esxi_p, ds_name = row
+        if host_id and esxi_ip:
+            esxi_manager.delete_vm_from_esxi(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, vm_name or sname, ds_name or "datastore1")
+
+        if reason_code == "ip_access":
+            # Quarantine IP so it is NOT assigned to any other user until Admin verifies it!
+            c.execute(
+                "UPDATE ip_pool SET is_allocated=0, server_id=NULL, ip_status='quarantined', quarantine_reason=? WHERE server_id=?",
+                (f"گزارش اکسسی توسط {session.get('username', 'user')}", server_id),
+            )
+            cfg = get_system_settings()
+            adm_chat = (cfg.get("admin_chat_id") or "").strip()
+            if adm_chat:
+                send_telegram_alert(
+                    adm_chat,
+                    f"🚧 *قرنطینه IP به دلیل اکسسی:* کاربر `{session.get('username')}` سرور *{sname}* (`{sip}`) را به علت *اکسسی آی‌پی* حذف کرد. این IP تا زمان بررسی و تایید سلامت شما در بخش «بانک آی‌پی» به هیچ سرور دیگری تخصیص داده نخواهد شد.",
+                )
+        else:
+            # Return IP directly back to free pool
+            c.execute(
+                "UPDATE ip_pool SET is_allocated=0, server_id=NULL, ip_status='free', quarantine_reason=NULL WHERE server_id=?",
+                (server_id,),
+            )
+
+    c.execute("DELETE FROM user_servers WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM traffic_samples WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM events WHERE server_id=?", (server_id,))
+    c.execute("DELETE FROM servers WHERE id=?", (server_id,))
+    conn.commit()
+    conn.close()
+    invalidate_servers_cache()
+    return redirect(url_for("dashboard"))
+
+
+def hourly_billing_and_test_worker():
+    """
+    Runs every 60s:
+    1. Charges hourly servers every 3600s: (monthly_price/720)*1.20 + delta_gib*(tb_price/1000)*1.20.
+       Suspends vNIC if wallet balance is insufficient.
+    2. Powers off and permanently deletes 1-hour test servers when test_expires_at is reached,
+       returning their IP back to ip_pool.
+    """
+    while True:
+        try:
+            now_dt = datetime.datetime.utcnow()
+            now_iso = now_dt.isoformat()
+            cfg = get_system_settings()
+            admin_chat = (cfg.get("admin_chat_id") or "").strip()
+            ad_tariffs = get_effective_addon_tariffs()
+            hourly_gib_rate = (ad_tariffs["tb_eff"] / 1000.0) * 1.20
+
+            conn = get_db_connection()
+            c = conn.cursor()
+
+            # 1. Process Hourly Servers
+            c.execute(
+                """SELECT s.id, s.name, s.ip, s.monthly_price, s.hourly_rate_toman, s.traffic_usage,
+                          COALESCE(s.last_billed_traffic_gib, 0), s.last_billed_at, s.is_suspended,
+                          s.vmid, s.esxi_host_id, h.ip, h.port, h.username, h.password
+                   FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id
+                   WHERE s.active=1 AND COALESCE(s.billing_type, 'monthly')='hourly' AND COALESCE(s.provisioning_status, 'ready')='ready'"""
+            )
+            hr_rows = c.fetchall()
+            for r in hr_rows:
+                sid, sname, sip, m_price, h_rate, t_usage, last_t, last_b_at, is_susp, vmid, host_id, esxi_ip, esxi_port, esxi_u, esxi_p = r
+                if is_susp:
+                    continue
+                try:
+                    last_dt = datetime.datetime.fromisoformat(last_b_at) if last_b_at else now_dt
+                except Exception:
+                    last_dt = now_dt
+                if (now_dt - last_dt).total_seconds() < 3600:
+                    continue
+
+                base_hr = int(h_rate or round(((m_price or 1190000) / 720.0) * 1.20))
+                delta_gib = max(0.0, float(t_usage or 0.0) - float(last_t or 0.0))
+                traffic_hr = int(round(delta_gib * hourly_gib_rate))
+                total_charge = base_hr + traffic_hr
+
+                c.execute("SELECT u.id, u.username, u.telegram_chat_id FROM users u JOIN user_servers us ON u.id=us.user_id WHERE us.server_id=? LIMIT 1", (sid,))
+                urow = c.fetchone()
+                if not urow:
+                    continue
+                uid, uname, u_tg = urow
+
+                c.execute(
+                    "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id=? AND COALESCE(wallet_balance, 0) >= ?",
+                    (total_charge, uid, total_charge),
+                )
+                if c.rowcount > 0:
+                    c.execute(
+                        "UPDATE servers SET last_billed_at=?, last_billed_traffic_gib=? WHERE id=?",
+                        (now_iso, float(t_usage or 0.0), sid),
+                    )
+                    c.execute(
+                        "INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'info', ?, ?)",
+                        (sid, f"کسر ساعتی سرور {sname}: {base_hr:,} ت (پایه) + {traffic_hr:,} ت ({delta_gib:.2f} GiB) = {total_charge:,} تومان", now_iso),
+                    )
+                    conn.commit()
+                else:
+                    if host_id and vmid and esxi_ip:
+                        esxi_manager.set_vnic_connection(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, connected=False)
+                    c.execute("UPDATE servers SET is_suspended=1 WHERE id=?", (sid,))
+                    msg = f"⛔ *اتمام موجودی کیف پول (سرور ساعتی):* سرور *{sname}* (`{sip}`) کاربر `{uname}` به دلیل کسری موجودی ({total_charge:,} ت) مسدود شد."
+                    c.execute("INSERT INTO events (server_id, level, message, created_at) VALUES (?, 'critical', ?, ?)", (sid, msg, now_iso))
+                    conn.commit()
+                    if u_tg:
+                        send_telegram_alert(u_tg, msg)
+                    if admin_chat:
+                        send_telegram_alert(admin_chat, msg)
+
+            # 2. Process 1-Hour Test Servers
+            c.execute(
+                """SELECT s.id, s.name, s.ip, s.vm_name, s.vmid, s.esxi_host_id, s.test_expires_at,
+                          h.ip, h.port, h.username, h.password, h.default_datastore
+                   FROM servers s LEFT JOIN esxi_hosts h ON s.esxi_host_id = h.id
+                   WHERE COALESCE(s.billing_type, 'monthly')='test_1h' AND COALESCE(s.provisioning_status, 'ready')='ready'
+                     AND s.test_expires_at IS NOT NULL AND s.test_expires_at != ''"""
+            )
+            test_rows = c.fetchall()
+            for tr in test_rows:
+                sid, sname, sip, vm_name, vmid, host_id, t_exp, esxi_ip, esxi_port, esxi_u, esxi_p, ds_name = tr
+                try:
+                    exp_dt = datetime.datetime.fromisoformat(t_exp)
+                except Exception:
+                    continue
+                if now_dt >= exp_dt:
+                    c.execute("SELECT u.telegram_chat_id, u.username FROM users u JOIN user_servers us ON u.id=us.user_id WHERE us.server_id=? LIMIT 1", (sid,))
+                    tu = c.fetchone()
+                    if host_id and esxi_ip:
+                        esxi_manager.delete_vm_from_esxi(esxi_ip, esxi_port, esxi_u, esxi_p, vmid, vm_name or sname, ds_name or "datastore1")
+                    c.execute("UPDATE ip_pool SET is_allocated=0, server_id=NULL, ip_status='free', quarantine_reason=NULL WHERE server_id=?", (sid,))
+                    c.execute("DELETE FROM user_servers WHERE server_id=?", (sid,))
+                    c.execute("DELETE FROM traffic_samples WHERE server_id=?", (sid,))
+                    c.execute("DELETE FROM events WHERE server_id=?", (sid,))
+                    c.execute("DELETE FROM servers WHERE id=?", (sid,))
+                    conn.commit()
+                    invalidate_servers_cache()
+                    end_msg = f"⏱️ *پایان مهلت سرور تست ۱ ساعته:* سرور *{sname}* (`{sip}`) پس از اتمام ۱ ساعت خاموش و حذف گردید و IP آن به بانک آی‌پی بازگشت."
+                    if tu and tu[0]:
+                        send_telegram_alert(tu[0], end_msg)
+                    if admin_chat:
+                        send_telegram_alert(admin_chat, end_msg)
+
+            conn.close()
+        except Exception as ex:
+            logging.error(f"Hourly/Test billing worker error: {ex}")
+        time.sleep(60)
+
 @app.route("/admin_settings", methods=["GET", "POST"])
 @perm_required("settings_manage")
 def admin_settings_page():
@@ -4305,7 +4583,7 @@ def admin_dashboard():
     total_users = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM users WHERE active=1")
     active_users = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM ip_pool WHERE is_allocated=0")
+    c.execute("SELECT COUNT(*) FROM ip_pool WHERE is_allocated=0 AND COALESCE(ip_status, 'free')='free'")
     free_ips = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM ip_pool")
     total_ips = c.fetchone()[0] or 0
@@ -4537,7 +4815,7 @@ def create_vm_page():
 
         if ip_pool_choice == "auto":
             c.execute(
-                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 ORDER BY id ASC LIMIT 1"
+                "SELECT id, ip_address, netmask, gateway, ipv6, ipv6_gateway, mac_address FROM ip_pool WHERE is_allocated=0 AND COALESCE(ip_status, 'free')='free' ORDER BY id ASC LIMIT 1"
             )
             pool_row = c.fetchone()
             if not pool_row:
@@ -6283,6 +6561,8 @@ def main():
     monitor_thread = threading.Thread(target=monitor_servers, daemon=True)
     lifecycle_thread = threading.Thread(target=daily_lifecycle_and_backup_worker, daemon=True)
     lifecycle_thread.start()
+    hourly_thread = threading.Thread(target=hourly_billing_and_test_worker, daemon=True)
+    hourly_thread.start()
     monitor_thread.start()
 
     run_flask()
